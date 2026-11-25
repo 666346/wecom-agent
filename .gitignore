@@ -1,0 +1,45 @@
+config.json
+__pycache__/
+*.pyc
+.DS_Store
+*.db
+*.plain.db
+*.dylib
+decrypt/内存提取输出_raw.txt
+docs/解密消息样本.txt
+
+# 解密产物与密钥(私密数据,绝不进 git) —— 覆盖 macOS/Windows 各 OS 子目录
+**/wxwork_keys.json
+**/key.txt
+**/key_windows.txt
+export/
+*.media.json
+*.assets-*/
+decrypt/**/decrypted/
+decrypt/**/export/
+decrypt/windows/recon_report*.json
+decrypt/**/validate.dylib
+*.csv
+jobs/
+.token_cache.json
+.venv/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+build/
+dist/
+*.egg-info/
+decrypt/legacy/
+
+# Generated documentation and local run receipts
+.sourcey/
+.runx/
+node_modules/
+
+# 本机私有数据 / 调试快照 —— 绝不进公开仓库
+_http_*.json
+_http_*.html
+codex_mcp_config.txt
+watch_groups.txt
+*.log

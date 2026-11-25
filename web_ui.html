@@ -1,0 +1,1612 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>企微 AI 导出工具</title>
+<style>
+:root{
+  --bg:#f6f7f9; --card:#fff; --border:#e5e7eb; --text:#1f2937; --muted:#6b7280;
+  --primary:#2563eb; --primary-soft:#eff6ff; --ok:#16a34a; --warn:#d97706; --danger:#dc2626;
+  --shadow:0 1px 2px rgba(16,24,40,.04),0 4px 14px rgba(16,24,40,.04);
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:14px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei",sans-serif}
+.wrap{max-width:1320px;margin:0 auto;padding:24px 20px 60px}
+header{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:18px}
+h1{font-size:21px;margin:0;letter-spacing:.3px}
+.sub{color:var(--muted);font-size:12px;margin-top:2px}
+.pill{display:inline-flex;align-items:center;gap:7px;background:var(--card);border:1px solid var(--border);
+  border-radius:999px;padding:6px 12px;font-size:12px;color:var(--muted);box-shadow:var(--shadow)}
+.dot{width:8px;height:8px;border-radius:50%;display:inline-block;background:#9ca3af}
+.dot.ok{background:var(--ok)} .dot.off{background:var(--danger)} .dot.idle{background:#f59e0b}
+.card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:18px 20px;margin-bottom:16px;box-shadow:var(--shadow)}
+.card h2{font-size:15px;margin:0 0 4px;display:flex;align-items:center;gap:8px}
+.card .desc{color:var(--muted);font-size:12px;margin:0 0 14px}
+.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:10px}
+.acct{border:1px solid var(--border);border-radius:10px;padding:11px 13px;background:#fcfcfd}
+.acct-top{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:13px}
+.acct-meta{color:var(--muted);font-size:12px;margin-top:4px}
+.tag{font-size:11px;padding:1px 7px;border-radius:999px;border:1px solid var(--border);color:var(--muted)}
+.tag.ok{color:var(--ok);border-color:#bbf7d0;background:#f0fdf4}
+.tag.off{color:var(--danger);border-color:#fecaca;background:#fef2f2}
+.mono{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:12px}
+.small{font-size:12px;color:var(--muted)}
+.litecmp{display:flex;gap:12px;flex-wrap:wrap;margin:12px 0}
+.litecmp .box{flex:1;min-width:230px;border:1px solid var(--border);border-radius:10px;padding:11px 14px;background:#fcfcfd}
+.litecmp .box.lite{border-color:#bfdbfe;background:var(--primary-soft)}
+.litecmp .box .t{font-size:12px;color:var(--muted)}
+.litecmp .box .v{font-size:22px;font-weight:700;margin:2px 0;letter-spacing:.3px}
+.litecmp .box.lite .v{color:var(--primary)}
+.litecmp .box .p{font-size:11.5px;color:var(--muted);word-break:break-all}
+.exdir{display:inline-flex;align-items:center;gap:9px;border:1px solid var(--border);border-radius:9px;
+  padding:7px 11px;margin:0 8px 8px 0;background:#fcfcfd;font-size:12px;max-width:100%}
+.exdir code{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;word-break:break-all}
+.exdir button{border:0;background:none;color:var(--danger);cursor:pointer;font-size:15px;line-height:1;padding:0}
+.voicebox{margin:6px 0;padding:8px 10px;border:1px solid #bfdbfe;background:#f8fbff;border-radius:9px}
+.voicebox .vtag{font-size:12px;font-weight:600;color:#1d4ed8;margin-bottom:4px}
+.voicebox .vtext{font-size:12.5px;color:#374151;white-space:pre-wrap;word-break:break-word;margin:4px 0 6px}
+.voicebox audio{height:32px;max-width:290px;width:100%;display:block;margin-top:5px}
+.msg-item.sysrow{opacity:.62;background:#fafafa}
+tr.expicked{background:#f0fdf4}
+.sysnoise{font-size:11.5px;color:var(--muted);margin:2px 0}
+.sysnoise summary{cursor:pointer;list-style:none}
+.sysnoise summary::-webkit-details-marker{display:none}
+.chip{display:inline-flex;align-items:center;gap:5px;padding:3px 8px;border:1px solid #86efac;background:#f0fdf4;color:#166534;border-radius:999px;font-size:12px}
+.chip.chip-empty{border-color:#e5e7eb;background:#f9fafb;color:#9ca3af}
+.chipx{border:0;background:none;color:inherit;cursor:pointer;font-size:14px;line-height:1;padding:0 1px;font-weight:700}
+.chipx:hover{color:#dc2626}
+.btn{border:1px solid var(--border);background:#fff;color:var(--text);border-radius:9px;padding:8px 15px;
+  font-size:13px;cursor:pointer;transition:.15s;font-family:inherit}
+.btn:hover{background:#f3f4f6;border-color:#d1d5db}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+.btn.primary{background:var(--primary);border-color:var(--primary);color:#fff}
+.btn.primary:hover{background:#1d4ed8}
+.btn.ghost{background:var(--primary-soft);border-color:#bfdbfe;color:#1d4ed8}
+.btn.danger{color:var(--danger);border-color:#fecaca}
+input[type=text],input[type=search],input[type=datetime-local]{border:1px solid var(--border);border-radius:9px;
+  padding:8px 11px;font-size:12.5px;font-family:inherit;outline:none;background:#fff;color:var(--text)}
+input:focus{border-color:var(--primary);box-shadow:0 0 0 3px rgba(37,99,235,.1)}
+#search{flex:1;min-width:220px}
+.split{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,1fr);gap:16px}
+@media(max-width:1000px){.split{grid-template-columns:1fr}}
+.tablebox{border:1px solid var(--border);border-radius:10px;overflow:auto;max-height:640px}
+table{border-collapse:collapse;width:100%;font-size:12.5px}
+th,td{padding:8px 10px;text-align:left;border-bottom:1px solid #f1f2f4;white-space:nowrap}
+th{position:sticky;top:0;background:#fafbfc;font-weight:600;color:var(--muted);z-index:1}
+tbody tr{cursor:pointer}
+tbody tr:hover{background:#f8fafc}
+tbody tr.sel{background:var(--primary-soft)}
+td.gname{white-space:normal;min-width:190px;max-width:300px;font-weight:500}
+td.num{text-align:right}
+.panel{border:1px solid var(--border);border-radius:10px;background:#fcfcfd;display:flex;flex-direction:column;min-height:640px}
+.filters{padding:11px 12px;border-bottom:1px solid var(--border);background:#fff;border-radius:10px 10px 0 0}
+.frow{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:8px}
+.frow:last-child{margin-bottom:0}
+.fbtn{border:1px solid var(--border);background:#fff;border-radius:7px;padding:5px 11px;font-size:12px;cursor:pointer;font-family:inherit;color:var(--muted)}
+.fbtn:hover{border-color:#bfdbfe;color:#1d4ed8}
+.fbtn.on{background:var(--primary);border-color:var(--primary);color:#fff}
+.tools{display:flex;gap:7px;align-items:center;flex-wrap:wrap;padding:9px 12px;border-bottom:1px solid var(--border);background:#fafbfc}
+.tools .btn{padding:5px 10px;font-size:12px}
+.selstat{font-size:12.5px;font-weight:600;color:#1d4ed8;margin-left:auto;white-space:nowrap}
+.msg-list{flex:1;max-height:520px;overflow:auto;padding:4px 12px 10px}
+.msg-item{display:flex;gap:9px;padding:9px 6px;border-bottom:1px dashed #e8eaed;border-radius:6px}
+.msg-item:hover{background:#f8fafc}
+.msg-item.selmsg{background:#f5f9ff}
+.msg-item .mcheck{margin-top:4px;flex:none;width:15px;height:15px;cursor:pointer}
+.msg-body{flex:1;min-width:0}
+.msg-meta{display:flex;gap:7px;align-items:center;flex-wrap:wrap;font-size:11.5px;color:var(--muted);margin-bottom:3px}
+.msg-meta b{color:var(--text);font-size:12px}
+.msg-text{margin:0;white-space:pre-wrap;word-break:break-word;font:12.5px/1.55 inherit;color:#374151}
+.files{display:flex;gap:5px;flex-wrap:wrap;margin-top:5px}
+.filetag{font-size:11px;background:#fff7ed;border:1px solid #fed7aa;color:#9a3412;border-radius:6px;padding:1px 7px;word-break:break-all}
+.mini{border:1px solid #bfdbfe;background:var(--primary-soft);color:#1d4ed8;border-radius:6px;
+  padding:1px 7px;font-size:11px;cursor:pointer;font-family:inherit}
+.mini:hover{background:#dbeafe}
+.hint{color:var(--muted);font-size:12.5px;padding:8px 0}
+.more{padding:8px 12px;border-top:1px solid var(--border);text-align:center;font-size:12px;color:var(--muted)}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:10px;margin:12px 0}
+.stat{border:1px solid var(--border);border-radius:10px;padding:10px 12px;background:#fcfcfd}
+.stat b{display:block;font-size:20px;line-height:1.2}
+.stat span{color:var(--muted);font-size:11.5px}
+.path{font-size:12.5px;margin:5px 0;word-break:break-all}
+code{background:#f3f4f6;border-radius:5px;padding:2px 6px;font-size:12px}
+.missing{margin:12px 0;border:1px solid #fde68a;background:#fffbeb;border-radius:10px;padding:10px 12px;font-size:12px;max-height:190px;overflow:auto}
+.missing div{padding:1px 0;color:#92400e}
+.filelist{margin:10px 0;border:1px solid var(--border);border-radius:10px;padding:9px 12px;font-size:12px;max-height:200px;overflow:auto;background:#fcfcfd}
+.filelist div{padding:2px 0;color:#374151}
+#logs{background:#0f172a;color:#cbd5e1;border-radius:10px;padding:12px;font:11.5px/1.6 ui-monospace,Consolas,monospace;
+  height:170px;overflow:auto;white-space:pre-wrap;word-break:break-word}
+#taskLog{background:#f8fafc;border:1px dashed var(--border);border-radius:9px;padding:9px 11px;
+  font:11.5px/1.55 ui-monospace,Consolas,monospace;max-height:130px;overflow:auto;white-space:pre-wrap;margin:10px 0}
+#msgbar{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);background:#111827;color:#fff;
+  padding:9px 18px;border-radius:999px;font-size:12.5px;box-shadow:0 8px 24px rgba(0,0,0,.18);
+  opacity:0;pointer-events:none;transition:.25s;z-index:99;max-width:90vw;text-align:center}
+#msgbar.show{opacity:1}
+#msgbar.err{background:var(--danger)}
+label.chk{display:inline-flex;align-items:center;gap:7px;font-size:13px;cursor:pointer;user-select:none}
+.foot{color:var(--muted);font-size:11.5px;text-align:center;margin-top:18px}
+.scope{background:var(--primary-soft);border:1px solid #bfdbfe;color:#1e40af;border-radius:9px;
+  padding:9px 12px;font-size:12.5px;margin-bottom:12px}
+.fwd{margin-top:8px;border:1px solid #bfdbfe;border-radius:9px;background:#f8fbff;overflow:hidden}
+.fwd>summary{cursor:pointer;padding:7px 11px;font-size:12px;font-weight:600;color:#1e40af;
+  list-style:none;display:flex;gap:8px;align-items:center;user-select:none}
+.fwd>summary::-webkit-details-marker{display:none}
+.fwd>summary::before{content:'▾';color:#3b82f6;font-size:11px}
+.fwd:not([open])>summary::before{content:'▸'}
+.fwd-body{border-top:1px solid #dbeafe;padding:6px 12px 10px;max-height:560px;overflow:auto;background:#fff}
+.fwd-item{padding:8px 0;border-bottom:1px dashed #e5ebff}
+.fwd-item:last-child{border-bottom:none}
+.fwd-parent{border-left:3px solid #60a5fa;padding-left:9px;background:#f5f9ff}
+.fwd-nested{font-size:11.5px;color:#1d4ed8;background:#eff6ff;border-radius:6px;
+  padding:4px 8px;margin:4px 0 6px}
+.tag.layer{background:#dbeafe;border-color:#93c5fd;color:#1d4ed8;font-weight:600}
+.fwd-meta{font-size:11px;color:var(--muted);margin-bottom:3px;display:flex;gap:7px;align-items:center;flex-wrap:wrap}
+.fwd-meta b{color:var(--text);font-size:11.5px}
+.fwd-text{font-size:12px;white-space:pre-wrap;word-break:break-word;color:#374151;margin:0}
+.fwd-files{display:flex;gap:8px;flex-wrap:wrap;margin-top:6px;align-items:flex-start}
+.fwd-thumb{width:104px;height:104px;object-fit:cover;border-radius:8px;border:1px solid var(--border);
+  background:#f8fafc;cursor:zoom-in;transition:.15s}
+.fwd-thumb:hover{transform:scale(1.04);border-color:#93c5fd}
+.fwd-file{font-size:11px;background:#fff;border:1px solid var(--border);border-radius:7px;
+  padding:5px 9px;color:#92400e;word-break:break-all;max-width:280px}
+.fwd-miss{color:var(--warn);display:block;margin-top:2px;font-size:10.5px}
+.live .dot.liveok{background:var(--ok);animation:pulse 2.4s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+
+/* ===================== 一屏桌面工作台（覆盖旧长页布局） ===================== */
+html,body{height:100%;overflow:hidden}
+body{display:flex;flex-direction:column}
+.wrap{max-width:none;width:100%;margin:0;padding:0;height:100vh;
+  display:flex;flex-direction:column;overflow:hidden}
+.topbar{height:52px;flex:none;display:flex;align-items:center;gap:14px;padding:0 14px;
+  background:#fff;border-bottom:1px solid var(--border);box-shadow:0 1px 4px rgba(16,24,40,.05);
+  z-index:60;position:relative;flex-wrap:nowrap;min-width:0}
+.brand{display:flex;flex-direction:column;line-height:1.15;flex:none;min-width:0}
+.brand b{font-size:14px;letter-spacing:.2px;white-space:nowrap}
+.brand .sub{font-size:10.5px;color:var(--muted);margin:0;white-space:nowrap}
+.tabs{display:flex;gap:4px;flex:none;align-items:center;height:100%}
+.tab{border:0;background:none;font:13px inherit;font-family:inherit;color:var(--muted);
+  padding:0 14px;height:100%;cursor:pointer;position:relative;white-space:nowrap}
+.tab:hover{color:var(--primary)}
+.tab.on{color:var(--primary);font-weight:600}
+.tab.on::after{content:'';position:absolute;left:10px;right:10px;bottom:0;height:3px;
+  background:var(--primary);border-radius:3px 3px 0 0}
+.badge{display:inline-block;min-width:18px;padding:0 5px;margin-left:3px;border-radius:999px;
+  background:var(--primary);color:#fff;font-size:10.5px;line-height:17px;text-align:center}
+.topright{margin-left:auto;display:flex;align-items:center;gap:7px;flex:none;min-width:0}
+.acctbtn{border:1px solid var(--border);background:#f8fafc;border-radius:999px;padding:5px 12px;
+  font:12px inherit;font-family:inherit;cursor:pointer;white-space:nowrap;color:var(--text)}
+.acctbtn:hover{border-color:#93c5fd;color:var(--primary)}
+.mini-btn{padding:5px 10px;font-size:11.5px;border-radius:8px;white-space:nowrap}
+.statpill{display:inline-flex;align-items:center;gap:5px;font-size:11px;color:var(--muted);
+  background:#f8fafc;border:1px solid var(--border);border-radius:999px;padding:4px 9px;white-space:nowrap}
+.viewport{flex:1;min-height:0;display:flex;flex-direction:column;overflow:hidden;padding:10px;gap:8px}
+.tabpanel{display:none;flex:1;min-height:0;flex-direction:column;overflow:hidden}
+.tabpanel.active{display:flex}
+.tabscroll{flex:1;min-height:0;overflow-y:auto;padding:2px 2px 20px}
+.workspace{flex:1;min-height:0;display:flex;gap:10px;overflow:hidden}
+.leftpane{width:400px;flex:none;display:flex;flex-direction:column;min-height:0;
+  border:1px solid var(--border);border-radius:12px;background:#fff;box-shadow:var(--shadow);overflow:hidden}
+.lefthead{flex:none;padding:9px 10px;border-bottom:1px solid var(--border);background:#fafbfc}
+.lefthead .row{gap:6px;flex-wrap:nowrap}
+#search{flex:1;min-width:0;width:100%;padding:6px 9px;font-size:12px}
+#groupCount{white-space:nowrap;font-size:11px}
+.glist{flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;padding:4px}
+.gcard{display:flex;gap:8px;align-items:flex-start;padding:7px 8px;margin-bottom:4px;
+  border:1px solid #eef0f3;border-radius:9px;cursor:pointer;background:#fff;min-width:0}
+.gcard:hover{background:#f8fafc;border-color:#dbeafe}
+.gcard.sel{background:var(--primary-soft);border-color:#93c5fd}
+.gcard.expicked{background:#f0fdf4;border-color:#86efac}
+.gchecks{display:flex;flex-direction:column;gap:3px;align-items:center;flex:none;padding-top:2px}
+.gchecks input{width:14px;height:14px;margin:0;cursor:pointer}
+.gchecks .watchbox{accent-color:#f59e0b}
+.gchecks .expbox{accent-color:var(--ok)}
+.gbody{flex:1;min-width:0}
+.gline1{display:flex;align-items:center;gap:6px;min-width:0;font-size:12.5px;line-height:1.35}
+.gname{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;flex:1}
+.gcount{flex:none;font-size:10.5px;color:var(--primary);background:#eff6ff;border-radius:5px;padding:0 5px}
+.gtime{flex:none;font-size:10.5px;color:var(--muted)}
+.gline2{font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;
+  text-overflow:ellipsis;line-height:1.4;min-width:0}
+.rightpane{flex:1;min-width:0;display:flex;flex-direction:column;min-height:0;
+  border:1px solid var(--border);border-radius:12px;background:#fff;box-shadow:var(--shadow);overflow:hidden}
+.filters,.tools{flex:none;padding:7px 10px}
+.filters{padding:7px 10px;border-bottom:1px solid var(--border);background:#fff}
+.frow{gap:5px;margin:0;flex-wrap:wrap}
+.fbtn{padding:4px 9px;font-size:11.5px}
+.tools{gap:6px;border-bottom:1px solid var(--border);background:#fafbfc;flex-wrap:nowrap}
+.tools .btn{padding:4px 9px;font-size:11.5px}
+.selstat{margin-left:auto;white-space:nowrap;font-size:11.5px}
+.selinfo{flex:none;padding:5px 10px 0;font-size:11px;color:var(--muted);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#msgList.msg-list{flex:1;min-height:0;max-height:none;overflow-y:auto;overflow-x:hidden;padding:4px 10px 10px}
+.more{flex:none;padding:5px 10px}
+.hintstrip{flex:none;border:1px solid var(--border);border-radius:10px;background:#fff;
+  box-shadow:var(--shadow);overflow:hidden}
+.hintbar{display:flex;align-items:center;gap:8px;padding:3px 9px;min-height:28px}
+.hintbody{max-height:190px;overflow-y:auto;padding:4px 10px 10px;border-top:1px solid var(--border)}
+.hintbody #exportResult{font-size:12px}
+.actionbar{flex:none;border:1px solid var(--border);border-radius:12px 12px 0 0;
+  background:#fff;box-shadow:0 -3px 14px rgba(16,24,40,.06);padding:7px 10px 9px;
+  display:flex;flex-direction:column;gap:6px}
+.abar-row{display:flex;align-items:center;gap:7px;min-width:0;flex-wrap:nowrap}
+.abar-row .btn{padding:6px 11px;font-size:12px;white-space:nowrap;flex:none}
+.abar-row .row{flex-wrap:nowrap;overflow-x:auto}
+.scope.compact{flex:1;min-width:80px;margin:0;padding:4px 8px;font-size:11.5px;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.abar-row label{white-space:nowrap;font-size:11px}
+.abar-sep{flex:1;min-width:6px}
+#codexName{padding:5px 8px;font-size:11.5px;width:150px;flex:none}
+.codexpathbar{display:flex;align-items:center;gap:8px;padding:5px 9px;border-radius:8px;
+  background:#ecfdf5;border:1px solid #6ee7b7;font-size:11.5px}
+.codexgrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+@media(max-width:1100px){.codexgrid{grid-template-columns:1fr}}
+.tabpanel .card{margin-bottom:10px;padding:12px 14px}
+.tabpanel .card h2{font-size:14px;margin-bottom:4px}
+.tabpanel .card .desc{margin-bottom:9px}
+#logs{height:190px}
+#taskLog{max-height:150px;display:block}
+.acctpop{display:none;position:fixed;top:56px;right:12px;width:min(680px,92vw);max-height:70vh;
+  overflow-y:auto;background:#fff;border:1px solid var(--border);border-radius:12px;
+  box-shadow:0 16px 40px rgba(16,24,40,.18);padding:12px;z-index:90}
+.acctpop.open{display:block}
+.acctpophead{display:flex;align-items:center;justify-content:space-between;
+  font-size:13px;font-weight:600;margin-bottom:9px}
+.acctpop .grid{grid-template-columns:repeat(auto-fill,minmax(210px,1fr))}
+#msgbar{top:62px;bottom:auto;transform:translateX(-50%);z-index:110}
+.foot{display:none}
+/* 未下载附件提醒改成醒目红色，收在轻提示条里 */
+.missing{border-color:#fecaca;background:#fef2f2;color:#991b1b}
+.missing div{color:#991b1b}
+#codexList>.hint{grid-column:1/-1}
+#codexList>.scope{margin-top:0}
+.errtext{color:var(--danger);font-weight:600}
+.syncerr{margin-top:9px;padding:8px 11px;border:1px solid #fecaca;background:#fef2f2;
+  color:#b91c1c;border-radius:8px;font-size:12px;word-break:break-all}
+.rootok{color:#15803d;font-weight:600}
+.rootbad{color:#b91c1c;font-weight:600}
+/* 双软件分流 */
+.seg{display:inline-flex;border:1px solid var(--border);border-radius:8px;overflow:hidden;flex:none}
+.segb{border:0;background:#fff;color:var(--muted);padding:5px 9px;font-size:11.5px;
+  cursor:pointer;font-family:inherit;border-right:1px solid var(--border)}
+.segb:last-child{border-right:0}
+.segb.on{background:var(--primary);color:#fff;font-weight:600}
+.segb[data-target="antigravity"].on{background:#7c3aed}
+.rootrow{display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin-bottom:8px;
+  padding:7px 9px;background:#fafbfc;border:1px solid var(--border);border-radius:9px}
+.rootrow input{flex:1;min-width:220px;padding:5px 8px;font-size:12px}
+.rootbadge{display:inline-flex;align-items:center;padding:2px 9px;border-radius:999px;
+  font-size:11px;font-weight:700;color:#fff;flex:none}
+.rootbadge.blue{background:#2563eb}
+.rootbadge.purple{background:#7c3aed}
+.filtercaps{display:flex;gap:6px;margin:0 0 10px}
+.cap{border:1px solid var(--border);background:#fff;border-radius:999px;padding:4px 13px;
+  font-size:12px;cursor:pointer;font-family:inherit;color:var(--muted)}
+.cap.on{background:var(--primary);border-color:var(--primary);color:#fff;font-weight:600}
+.conflictbar{display:flex;align-items:center;gap:8px;padding:6px 9px;border-radius:8px;
+  background:#fffbeb;border:1px solid #fcd34d;color:#92400e;font-size:12px;flex-wrap:wrap}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="topbar">
+    <div class="brand"><b>企微 AI 工作台</b><span class="sub">本地离线 · 0 上传</span></div>
+    <nav class="tabs">
+      <button class="tab on" data-tab="work">导出工作台</button>
+      <button class="tab" data-tab="codex">AI 在办项目 <span id="codexTabCount" class="badge">0</span></button>
+      <button class="tab" data-tab="settings">设置与日志</button>
+    </nav>
+    <div class="topright">
+      <button class="acctbtn" id="btnAcctPop">账号在线 ▾</button>
+      <button class="btn mini-btn" id="btnRescan">重扫密钥</button>
+      <button class="btn mini-btn" id="btnReload">刷新列表</button>
+      <span class="statpill live"><span class="dot liveok" id="liveDot"></span><span id="liveState">实时同步待命</span></span>
+      <span class="statpill"><span class="dot ok" id="svcDot"></span>本地服务</span>
+      <span class="statpill"><span class="dot" id="wecomDot"></span><span id="wecom">检测中…</span></span>
+    </div>
+  </header>
+
+  <main class="viewport">
+    <!-- ======================= Tab 1 导出工作台 ======================= -->
+    <section class="tabpanel active" data-tab="work">
+      <div class="workspace">
+        <aside class="leftpane">
+          <div class="lefthead">
+            <div class="row">
+              <input type="search" id="search" placeholder="群名 / 成员 / 备注 / conversation-id；用 / 隔开可一次搜多个对话（并集）">
+              <span class="small" id="groupCount">—</span>
+            </div>
+            <div class="row" style="margin-top:6px">
+              <button class="fbtn" id="btnExportAll">全选导出</button>
+              <button class="fbtn" id="btnExportNone">清空勾选</button>
+              <span class="small" id="exportPickCount">未勾选会话</span>
+            </div>
+          </div>
+          <div id="groups" class="glist"></div>
+        </aside>
+
+        <section class="rightpane">
+          <div class="filters">
+            <div class="frow">
+              <span class="small">快捷</span>
+              <button class="fbtn" data-range="all">全部</button>
+              <button class="fbtn" data-range="today">今天</button>
+              <button class="fbtn" data-range="3d">近3天</button>
+              <button class="fbtn on" data-range="7d">近7天</button>
+              <button class="fbtn" data-range="30d">近30天</button>
+              <button class="fbtn" id="btnCustomToggle">自定义 ▾</button>
+            </div>
+            <div class="frow" id="customRow" style="display:none;margin-top:6px">
+              <input type="datetime-local" id="dtStart" title="开始日期时间">
+              <span class="small">到</span>
+              <input type="datetime-local" id="dtEnd" title="结束日期时间">
+              <button class="fbtn" id="btnCustom">应用时间段</button>
+            </div>
+          </div>
+          <div class="tools">
+            <button class="btn" id="btnAll">全选</button>
+            <button class="btn" id="btnInvert">反选</button>
+            <button class="btn" id="btnNone">清空</button>
+            <span class="selstat" id="selStat">已选 0 条消息 / 含 0 个附件</span>
+          </div>
+          <div class="selinfo" id="selInfo">未选择群聊 · 点击左侧会话查看消息</div>
+          <div class="msg-list" id="msgList"><div class="hint">点击左侧群聊查看消息。</div></div>
+          <div class="more" id="moreWrap" style="display:none">
+            <span id="moreInfo"></span> · <button class="fbtn" id="btnMore">加载更多</button>
+          </div>
+        </section>
+      </div>
+
+      <!-- 可折叠轻量提示条：进度 / 解析完整度 / 去重 / 未下载提醒 -->
+      <div class="hintstrip" id="hintStrip">
+        <div class="hintbar">
+          <button class="fbtn" id="btnHintToggle">▸ 导出进度 · 解析完整度 · 去重 · 未下载提醒</button>
+          <span class="small" id="hintBrief">就绪</span>
+          <button class="fbtn" id="btnHintClose" style="margin-left:auto" title="收起">×</button>
+        </div>
+        <div class="hintbody" id="hintBody" style="display:none">
+          <div id="exportResult"><div class="hint">选好消息后点「一键导出 ZIP」，进度与解析完整度会在这里展开。</div></div>
+        </div>
+      </div>
+
+      <!-- 常驻吸底操作条 -->
+      <footer class="actionbar">
+        <div class="abar-row">
+          <div class="row" id="exportChips" style="flex:0 1 auto;min-width:0;gap:5px"></div>
+          <div class="scope compact" id="exportScope">请先在右侧勾选消息</div>
+          <label class="small"><input type="checkbox" id="zipTimestamp" checked> 带时间戳</label>
+          <label class="small"><input type="checkbox" id="autoLocate" checked> 导出后选中ZIP</label>
+          <label class="small"><input type="checkbox" id="alwaysLite"> 强制轻量包</label>
+        </div>
+        <div class="abar-row">
+          <button class="btn primary" id="btnExport" disabled>一键导出 ZIP</button>
+          <button class="btn" id="btnOpen" disabled>定位完整包</button>
+          <button class="btn" id="btnDownload" disabled>下载</button>
+          <button class="btn ghost" id="btnOpenLite" disabled>定位轻量包</button>
+          <button class="btn ghost" id="btnDownloadLite" disabled>下载轻量包</button>
+          <span class="abar-sep"></span>
+          <span class="seg" id="targetSwitch" title="选择活目录建在哪个软件的根目录下">
+            <button class="segb on" data-target="codex">Codex</button>
+            <button class="segb" data-target="antigravity">反重力</button>
+          </span>
+          <input type="text" id="codexName" placeholder="项目名（留空自动）">
+          <button class="btn ghost" id="btnCodexStart">同步到 Codex</button>
+        </div>
+        <div class="codexpathbar" id="codexPathBar" style="display:none">
+          <span class="codexpathlabel" id="codexPathLabel">✅ 实时目录已开启（0 导出 / 0 上传）：</span>
+          <span class="mono small" id="codexPathText"></span>
+          <button class="fbtn" id="btnCopyPath">一键复制路径</button>
+          <button class="fbtn" id="btnCopyStart">复制开工指令</button>
+          <button class="fbtn" id="btnCopyResume">复制续改口令</button>
+          <button class="fbtn" id="btnGotoCodex">去查看</button>
+          <button class="fbtn" id="btnCodexPathClose" title="关闭">×</button>
+        </div>
+        <div class="conflictbar" id="conflictBar" style="display:none">
+          <span id="conflictText"></span>
+          <button class="fbtn" id="btnGotoOriginal">切到原项目</button>
+          <button class="fbtn" id="btnConflictClose" title="关闭">×</button>
+        </div>
+      </footer>
+    </section>
+
+    <!-- ======================= Tab 2 AI 在办项目（双根目录） ======================= -->
+    <section class="tabpanel" data-tab="codex">
+      <div class="tabscroll">
+        <div class="card">
+          <h2>AI 在办项目 · 双根目录配置</h2>
+          <p class="desc">两个软件的活目录<b>物理分开、互不混淆</b>：5 秒心跳、000_最新变化.md、客户 ZIP 自动解压、开工/续改口令完全一致，只有落盘根目录不同。同组会话只在一个软件里处理，避免两个 AI 同时改稿。</p>
+          <div class="rootrow">
+            <span class="rootbadge blue">Codex</span>
+            <input type="text" id="codexRoot" placeholder="Codex 根目录">
+            <span class="small" id="codexRootState">检测中…</span>
+            <button class="btn ghost" data-save-root="codex">保存</button>
+            <button class="btn ghost" data-open-root="codex">打开目录</button>
+          </div>
+          <div class="rootrow">
+            <span class="rootbadge purple">反重力</span>
+            <input type="text" id="antigravityRoot" placeholder="反重力 根目录">
+            <span class="small" id="antigravityRootState">检测中…</span>
+            <button class="btn ghost" data-save-root="antigravity">保存</button>
+            <button class="btn ghost" data-open-root="antigravity">打开目录</button>
+          </div>
+          <div class="row" style="margin-top:6px">
+            <button class="btn ghost" id="btnCodexReload">刷新清单</button>
+            <span class="small" id="codexHint">按左侧勾选的导出会话（或当前选中会话）+ 快捷时间范围开启；起始时间之后的新消息自动增量进入目录。停止并移出只停同步，绝不删文件。</span>
+          </div>
+        </div>
+        <div class="filtercaps" id="targetFilter">
+          <button class="cap on" data-filter="all">全部</button>
+          <button class="cap" data-filter="codex">Codex</button>
+          <button class="cap" data-filter="antigravity">反重力</button>
+        </div>
+        <div id="codexList" class="codexgrid"></div>
+      </div>
+    </section>
+
+    <!-- ======================= Tab 3 设置与日志 ======================= -->
+    <section class="tabpanel" data-tab="settings">
+      <div class="tabscroll">
+        <div class="card">
+          <h2>① 补扫目录（另存为文件找回）</h2>
+          <p class="desc">只有当附件在企微 Cache 里未命中时，才会对下面目录做浅层补扫（最多 3 层、自动跳过「企业微信导出」目录自身）。命中要求文件名完全一致、字节数一致；多个同名文件取修改时间最接近该条消息时间的那个，绝不乱抓其它单子的文件。</p>
+          <div class="row">
+            <input type="text" id="extraDirInput" placeholder="粘贴目录完整路径，例如 D:\我的下载" style="min-width:330px">
+            <button class="btn" id="btnExtraAdd">添加目录</button>
+            <button class="btn ghost" id="btnExtraReset">恢复默认</button>
+            <span class="small">改动会立即写入 config.json，下次导出生效</span>
+          </div>
+          <div id="extraDirList" style="margin-top:10px"><div class="hint">加载中…</div></div>
+        </div>
+
+        <div class="card">
+          <h2>② 每 5 分钟自动同步</h2>
+          <p class="desc">开关由本界面控制，无需额外后台脚本；无新消息时自动跳过，不重复复制附件。</p>
+          <div class="row">
+            <button class="btn" id="btnSync">开启自动同步</button>
+            <span class="pill"><span class="dot idle" id="syncDot"></span><span id="syncState">未开启</span></span>
+            <span class="small">最近同步：<b id="lastSync">—</b></span>
+            <span class="small">已加入 <b id="watchCount">0</b> 个群</span>
+          </div>
+          <div id="syncError" class="syncerr" style="display:none"></div>
+        </div>
+
+        <div class="card">
+          <h2>③ 导出任务日志</h2>
+          <div id="taskLog" style="display:none"></div>
+          <div class="hint">点「一键导出 ZIP」后这里会实时追加任务进度；上方吸底条也会自动展开解析完整度与未下载提醒。</div>
+        </div>
+
+        <div class="card">
+          <h2>④ 后台实时日志（独立滚动）</h2>
+          <div id="logs">加载中…</div>
+        </div>
+
+        <div class="foot">数据全部留在本机 · 导出目录：<span id="exportRoot" class="mono">—</span></div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<div class="acctpop" id="acctPop">
+  <div class="acctpophead">账号明细 <button class="fbtn" id="btnAcctPopClose">关闭 ×</button></div>
+  <div class="grid" id="acct"></div>
+  <div class="row" style="margin-top:10px"><span class="small" id="locked"></span></div>
+</div>
+<div id="msgbar"></div>
+
+<script>
+const $ = s => document.querySelector(s);
+const $$ = s => Array.from(document.querySelectorAll(s));
+const S = { groups:[], watched:[], selected:null, syncEnabled:false, lastOutDir:null,
+            lastZipPath:null, lastZipName:null,
+            lastLiteZipPath:null, lastLiteZipName:null, extraDirs:[],
+            range:'7d', messages:[], selIds:new Set(), rendered:0, PAGE:150,
+            lastId:'', liveBusy:false, liveAt:'', searchTimer:null, loadSeq:0,
+            exportGroups:new Map(), msgSelByGroup:new Map(), groupInfo:new Map(),
+            liveTarget:readLiveTarget(), liveFilter:'all', lastCodexStatus:null,
+            conflictProject:null };
+let msgTimer = null;
+
+function readLiveTarget(){
+  try{ return localStorage.getItem('wecomLiveTarget')==='antigravity'
+        ? 'antigravity' : 'codex'; }catch(e){ return 'codex'; }
+}
+function setLiveTarget(t){
+  S.liveTarget=(t==='antigravity')?'antigravity':'codex';
+  try{ localStorage.setItem('wecomLiveTarget', S.liveTarget); }catch(e){}
+  $$('#targetSwitch .segb').forEach(b=>
+    b.classList.toggle('on', b.dataset.target===S.liveTarget));
+  const btn=$('#btnCodexStart');
+  if(btn) btn.textContent=S.liveTarget==='antigravity'?'同步到反重力':'同步到 Codex';
+}
+function setLiveFilter(f){
+  S.liveFilter=f;
+  $$('#targetFilter .cap').forEach(x=>
+    x.classList.toggle('on', x.dataset.filter===f));
+  if(S.lastCodexStatus) renderCodexList(S.lastCodexStatus);
+}
+
+// ---- 多会话合并导出：会话勾选 + 每个会话各自的已选消息记忆 ----
+function groupKey(g){ return String(g.account)+'|'+String(g.id); }
+function exportLabel(g){
+  const raw=String(g.name||g.id||'').split('·')[0].trim();
+  return raw.length>16 ? raw.slice(0,16)+'…' : (raw||String(g.id));
+}
+function saveSel(){
+  if(!S.selected || !S.selIds) return;
+  const key=groupKey(S.selected);
+  S.msgSelByGroup.set(key, new Set(S.selIds));
+  let files=0;
+  for(const m of S.messages) if(S.selIds.has(m.id))
+    files+=(m.files||[]).length+(m.media||[]).length+(m.voice?1:0);
+  S.groupInfo.set(key, {count:S.selIds.size, files, ids:[...S.selIds]});
+}
+function restoreSelFor(g, messages){
+  const saved=S.msgSelByGroup.get(groupKey(g));
+  // 回来时只保留仍存在于当前筛选结果里的勾选；没点开微调过的会话默认全选有效消息
+  return saved
+    ? new Set([...saved].filter(id=>messages.some(m=>m.id===id)))
+    : new Set(messages.filter(m=>!m.system_noise).map(m=>m.id));
+}
+function msgUrlFor(g){
+  let url='/api/messages?cid='+encodeURIComponent(g.id)+'&account='+
+          encodeURIComponent(g.account)+'&range='+encodeURIComponent(S.range);
+  if(S.range==='custom')
+    url+='&start='+encodeURIComponent($('#dtStart').value||'')+
+         '&end='+encodeURIComponent($('#dtEnd').value||'');
+  return url;
+}
+async function ensureGroupInfo(g){
+  const key=groupKey(g);
+  if(S.groupInfo.has(key)) return;
+  try{
+    const r=await api(msgUrlFor(g));
+    const msgs=(r.messages||[]).filter(m=>!m.system_noise);
+    let files=0;
+    for(const m of msgs)
+      files+=(m.files||[]).length+(m.media||[]).length+(m.voice?1:0);
+    S.groupInfo.set(key,{count:msgs.length, files, ids:msgs.map(m=>m.id)});
+  }catch(e){
+    S.groupInfo.set(key,{count:Number(g.messages)||0, files:0, ids:[]});
+  }
+  updateExportSummary();
+}
+function setExportGroup(g,on){
+  const key=groupKey(g);
+  if(on){
+    S.exportGroups.set(key,{account:g.account,id:g.id,name:g.name,messages:g.messages});
+    if(!S.groupInfo.has(key) && !S.msgSelByGroup.has(key)) ensureGroupInfo(g);
+  }else{
+    S.exportGroups.delete(key);
+  }
+}
+function activeExportEntries(){
+  const out=[];
+  for(const [key,meta] of S.exportGroups){
+    const info=S.groupInfo.get(key);
+    const n=info ? info.count : (Number(meta.messages)||0);
+    if(n>0) out.push({key,meta,count:n,files:info?info.files:0});
+  }
+  return out;
+}
+function renderExportChips(){
+  const box=$('#exportChips');
+  if(!box) return;
+  const chips=[...S.exportGroups].map(([key,meta])=>{
+    const info=S.groupInfo.get(key);
+    const n=info ? info.count : (Number(meta.messages)||0);
+    const label=exportLabel(meta)+' · '+n+' 条'+(n===0?'（已忽略）':'');
+    return `<span class="chip${n===0?' chip-empty':''}" title="${esc(meta.name)}">${esc(label)} <button type="button" class="chipx" data-key="${esc(key)}" title="单独移出导出">×</button></span>`;
+  }).join('');
+  box.innerHTML = chips || '<span class="small">未勾选导出会话（用左侧「导出」列或搜索结果全选）</span>';
+  $$('#exportChips .chipx').forEach(b=>b.addEventListener('click', e=>{
+    e.stopPropagation();
+    S.exportGroups.delete(b.dataset.key);
+    renderGroups(); renderExportChips(); updateExportSummary();
+  }));
+}
+function updateExportSummary(){
+  renderExportChips();
+  refreshCodexButton();
+  const entries=activeExportEntries();
+  const count=entries.length, multi=count>=2, btn=$('#btnExport');
+  const picked=S.exportGroups.size;
+  if(btn) btn.textContent = multi ? '合并导出为 1 个 ZIP' : '一键导出给 AI';
+  const pick=$('#exportPickCount');
+  if(pick) pick.textContent = picked
+    ? '已勾选 '+picked+' 个会话 · 有效 '+count+' 个'+(multi?' · 合并模式':'')
+    : '未勾选会话';
+  if(!multi){
+    let n=0; for(const m of S.messages) if(S.selIds.has(m.id)) n++;
+    $('#exportScope').textContent = n
+      ? '本次只导出这 '+n+' 条消息，以及这些消息明确提到、并在当前账号缓存里精准匹配到的附件；不会混入其它群或旧单子。'
+      : '请先在右侧勾选消息';
+    if(btn) btn.disabled = !S.selected || n===0;
+    return;
+  }
+  let total=0, files=0; const parts=[];
+  for(const e of entries){
+    total+=e.count; files+=e.files;
+    parts.push(exportLabel(e.meta)+' · '+e.count+' 条');
+  }
+  $('#exportScope').textContent='本次合并导出 '+count+' 个会话（'+parts.join(' + ')+
+    '，共 '+total+' 条消息 / 含 '+files+' 个附件）';
+  if(btn) btn.disabled = total===0;
+}
+
+function codexScope(){
+  const picked=activeExportEntries();
+  if(picked.length>=1){
+    const entries=picked.map(e=>({account:e.meta.account,cid:e.meta.id,name:e.meta.name}));
+    return entries.length>=2 ? {items:entries} : entries[0];
+  }
+  if(S.selected) return {account:S.selected.account,cid:S.selected.id,name:S.selected.name};
+  return null;
+}
+// 开启 Codex 只看左侧勾选/当前选中会话，绝不依赖右侧消息是否加载完成
+function refreshCodexButton(){
+  const btn=$('#btnCodexStart');
+  if(!btn || btn.dataset.busy==='1') return;
+  const ok=!!codexScope();
+  btn.disabled=!ok;
+  btn.title=ok?'开启 Codex 实时目录（不依赖右侧消息加载）':'请先在左侧勾选导出会话或点选一个会话';
+}
+async function codexStatus(){
+  const d=await api('/api/codex/status');
+  S.lastCodexStatus=d;
+  const roots=d.live_roots||{};
+  const cr=$('#codexRoot'), ar=$('#antigravityRoot');
+  if(cr && !cr.value) cr.value=roots.codex||d.root||'';
+  if(ar && !ar.value) ar.value=roots.antigravity||'';
+  const badge=$('#codexTabCount');
+  if(badge) badge.textContent=String(d.count||0);
+  for(const t of ['codex','antigravity']){
+    const el=$('#'+t+'RootState'), info=(d.roots||{})[t];
+    if(el && info){
+      el.className='small '+(info.exists&&info.writable?'rootok':'rootbad');
+      el.textContent=(info.exists
+          ? (info.writable?'✅ 存在且可写':'⚠️ 存在但不可写')
+          : '⚠️ 不存在（开启时自动创建）')
+        +' · '+String(info.projects||0)+' 个项目目录 · 每 '+String(d.interval||5)+' 秒检测';
+    }
+  }
+  renderCodexList(d);
+}
+const CODEX_START_PROMPT = `【开工指令模板开始】
+请直接读取本地文件夹 <项目路径> 里的 000_chat.md 和所有编号附件，按以下要求执行：
+请你以「10 年经验的资深项目负责人兼设计师」的身份，像真人一样通读这份客户项目资料（文件夹或压缩包）：
+- 000_chat.md 是按时间正序导出的完整聊天记录（含合并转发、引用回复、语音转文字，可能合并了客服私聊与客户群）；
+- 001/002… 是与文中 [附件 00X] / [同附件 00X] 一一对应的参考图、文档、模型或语音。如有任何图片/附件读不到或打不开，先直接告诉我具体编号，严禁硬猜。
+精读规则：分清客户、客服转述与我的发言，以客户最新时间线亲口确认为准，自动作废旧要求；重点识别图片上的红圈、红框、问号、文字标注及 > 引用 [附件 00X] 指向的原图，严格区分「正面参考」与「被否定的反例」，读懂客户真实使用场景与深层痛点。
+请按 3 步执行：
+1. 客户深层需求简明总结（5 行大白话）：写清最终要做什么、拿去怎么用、最在意的痛点与核心效果；标明分别参考哪几个附件（001/002…）及避坑雷区；把客户模糊口语优化成清晰可执行的专业要点（语音有歧义单独标出，严禁编造硬参数）。
+2. 精准提问 + 高质量初稿（默认）：该问的一个不漏、废话一句不问，凡是影响尺寸、工艺、交付格式、核心效果或易导致返工的模糊点按轻重列出并附带专业推荐选项，整理成可直接发给客户的简短确认话术；若缺根本无法动工的硬条件先只出确认清单；只要大方向明确，就直接做出可发客户验收的高质量商业初稿/样稿（次要细节按行业高标准补齐），把待确认项附在后面，自检无误后再交给我。
+3. 精准改稿与高质量终稿：记录里客户对初稿提了修改意见，逐条对照红圈/文字精准改样稿并标出改动点；一旦客户明确确认初稿满意，立刻按可直接落地/生产/发布的商业终稿标准输出完整终稿，自检无错漏后交付。
+【开工指令模板结束】`;
+const CODEX_RESUME_PROMPT = `【续改口令模板开始】
+客户发新消息了，请重新读取本地文件夹 <项目路径> 里最新的 000_最新变化.md、000_chat.md 和新增编号附件（重点看最新红圈标注与引用指向），以最新时间线为准先用 3 行确认本轮改动点，然后直接更新样稿（若客户已明确满意则直接出商业终稿）。
+【续改口令模板结束】`;
+function fillCodexPrompt(tpl, folder){ return tpl.split('<项目路径>').join(folder); }
+async function copyCodexText(text, label){
+  if(!text){ setMsg('请先开启一个实时目录',true); return; }
+  try{ await navigator.clipboard.writeText(text); }
+  catch(e){
+    const ta=document.createElement('textarea'); ta.value=text;
+    document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove();
+  }
+  setMsg(label+'已复制到剪贴板');
+}
+function renderCodexList(d){
+  const box=$('#codexList');
+  if(!box) return;
+  const all=d.projects||[];
+  const items=S.liveFilter==='all'?all
+    :all.filter(p=>(p.target||'codex')===S.liveFilter);
+  box.innerHTML = items.length ? items.map(p=>`
+    <div class="scope" style="margin-top:10px;background:#f8fafc">
+      <div class="row" style="justify-content:space-between;align-items:flex-start">
+        <div>
+          <span class="rootbadge ${p.target==='antigravity'?'purple':'blue'}">${p.target==='antigravity'?'反重力':'Codex'}</span>
+          <b>${esc(p.name)}</b> <span class="tag ok">${esc(p.status==='running'?'实时同步中':'已停止')}</span>
+          <div class="mono small" style="margin-top:4px">${esc(p.folder)}</div>
+          <div class="small">🫀 后台监控心跳 <b>${esc(d.heartbeat||'—')}</b>（每 ${esc(String(d.interval||5))} 秒检测 · 监控中）</div>
+          <div class="small">✍️ 最新消息写入 <b>${esc(p.last_write||p.last_update||'—')}</b>（${p.stats&&p.stats.messages||0} 条消息 / ${p.stats&&p.stats.attachments||0} 个附件）</div>
+          <div class="small">最后更新 ${esc(p.last_update||'—')} · 本轮新增 ${p.last_added?p.last_added.messages:0} 条 / ${p.last_added?p.last_added.attachments:0} 附件${p.stats&&p.stats.deduplicated?' · 去重 '+p.stats.deduplicated:''}${p.last_error?' · <span style="color:#b91c1c">'+esc(p.last_error)+'</span>':''}</div>
+        </div>
+        <div class="row" style="flex-wrap:wrap;gap:6px">
+          <button class="btn ghost" data-act="copy" data-id="${esc(p.id)}" data-folder="${esc(p.folder)}">一键复制目录路径</button>
+          <button class="btn ghost" data-act="copy-start" data-id="${esc(p.id)}" data-folder="${esc(p.folder)}">复制开工指令</button>
+          <button class="btn ghost" data-act="copy-resume" data-id="${esc(p.id)}" data-folder="${esc(p.folder)}">复制续改口令</button>
+          <button class="btn ghost" data-act="open" data-id="${esc(p.id)}">打开目录</button>
+          <button class="btn ghost" data-act="refresh" data-id="${esc(p.id)}">立即刷新</button>
+          <button class="btn ghost" data-act="stop" data-id="${esc(p.id)}">停止并移出</button>
+        </div>
+      </div>
+    </div>`).join('')
+    : '<div class="hint" style="margin-top:10px">当前没有实时在办项目。选好会话与时间范围后点「开启 Codex 实时目录」。</div>';
+  $$('#codexList button[data-act]').forEach(b=>b.addEventListener('click',()=>codexAction(b)));
+}
+async function codexAction(btn){
+  const act=btn.dataset.act, id=btn.dataset.id;
+  try{
+    if(act==='copy'){
+      const folder=btn.dataset.folder;
+      try{ await navigator.clipboard.writeText(folder); }
+      catch(e){
+        const ta=document.createElement('textarea'); ta.value=folder;
+        document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove();
+      }
+      setMsg('目录路径已复制：'+folder); return;
+    }
+    if(act==='copy-start'){
+      await copyCodexText(fillCodexPrompt(CODEX_START_PROMPT, btn.dataset.folder||''),'开工指令'); return;
+    }
+    if(act==='copy-resume'){
+      await copyCodexText(fillCodexPrompt(CODEX_RESUME_PROMPT, btn.dataset.folder||''),'续改口令'); return;
+    }
+    if(act==='open'){ await api('/api/codex/open',{id}); setMsg('已在资源管理器打开目录'); return; }
+    if(act==='refresh'){ setMsg('正在立即刷新…'); await api('/api/codex/refresh',{id}); setMsg('已增量刷新'); }
+    if(act==='stop'){ await api('/api/codex/stop',{id}); setMsg('已停止同步，目录文件完整保留'); }
+    await codexStatus();
+  }catch(e){ setMsg(e.message,true); }
+}
+function showConflict(d){
+  S.conflictProject=d.project||null;
+  const bar=$('#conflictBar'), txt=$('#conflictText');
+  if(txt) txt.textContent='⚠️ 该单子已在 '+(d.existing_target_label||'其它软件')
+    +' 实时同步中，为避免两个 AI 同时改稿冲突，建议只在一个软件里处理。原目录：'
+    +((d.project&&d.project.folder)||'');
+  if(bar) bar.style.display='flex';
+  setMsg('已拦截跨软件冲突，未新建目录',true);
+}
+async function doCodexStart(){
+  const scope=codexScope();
+  if(!scope){ setMsg('请先在左侧勾选导出会话或点选一个会话',true); return; }
+  const btn=$('#btnCodexStart'); btn.disabled=true; btn.dataset.busy='1';
+  try{
+    const d=await api('/api/codex/start',{
+      name:$('#codexName').value.trim(),
+      default_name:(scope.items?scope.items[0].name:scope.name), scope,
+      target:S.liveTarget,
+      range:S.range,
+      start:$('#dtStart')?$('#dtStart').value:'', end:$('#dtEnd')?$('#dtEnd').value:''
+    }, 60000);
+    if(d.conflict_other_target){ showConflict(d); return; }
+    const folder=d.project.folder;
+    if(d.already_exists){
+      setMsg('该单子已在实时同步中，已为你刷新原目录');
+      showCodexPath(folder, true);
+      switchTab('codex');            // 直接展示原目录的完整操作按钮
+    }else{
+      const badge=$('#codexTabCount');
+      if(badge) badge.textContent=String((parseInt(badge.textContent,10)||0)+1);
+      showCodexPath(folder, false);
+      setMsg('已开启实时目录：'+folder);
+    }
+    try{ await codexStatus(); }
+    catch(e){ setMsg('清单刷新失败：'+(e.message||e),true); }
+  }catch(e){ setMsg(e.message||String(e),true); }
+  finally{ delete btn.dataset.busy; refreshCodexButton(); }
+}
+
+function esc(v){ return String(v==null?'':v).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function setMsg(text, err){
+  const el=$('#msgbar'); el.textContent=text; el.className='show'+(err?' err':'');
+  clearTimeout(msgTimer); msgTimer=setTimeout(()=>{el.className='';}, 4200);
+}
+async function api(path, body, timeoutMs){
+  const opt = body===undefined ? {} : {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)};
+  const ms = timeoutMs || 20000;
+  const ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+  if(ctrl) opt.signal=ctrl.signal;
+  const timer=setTimeout(()=>{ if(ctrl) ctrl.abort(); }, ms);
+  let r, txt;
+  try{
+    r = await fetch(path, opt);
+    txt = await r.text();
+  }catch(e){
+    if(e && e.name==='AbortError')
+      throw new Error('请求超时（'+Math.round(ms/1000)+' 秒），本地服务可能正忙，请重试');
+    throw e;
+  }finally{ clearTimeout(timer); }
+  let d; try{ d=JSON.parse(txt); }catch(e){ throw new Error('返回不是 JSON: '+txt.slice(0,180)); }
+  if(!r.ok && !d.error) throw new Error('HTTP '+r.status);
+  if(d.error) throw new Error(d.error);
+  return d;
+}
+
+function renderAccounts(st){
+  const list=st.accounts||[];
+  $('#acct').innerHTML = list.map(a=>`
+    <div class="acct">
+      <div class="acct-top"><span class="dot ${a.online?'ok':'off'}"></span><b class="mono">${esc(a.id)}</b>
+        <span class="tag ${a.online?'ok':'off'}">${a.online?'已解锁 · 在线':'不可用'}</span>
+        <span class="tag ${a.source && a.source!=='宿主机'?'ok':''}">${esc(a.source||'宿主机')}</span></div>
+      <div class="acct-meta">${a.conversations} 个会话 · ${a.db_mb} MB · 最后写入 ${esc(a.last_write||'—')}</div>
+      ${a.source && a.source!=='宿主机'?`<div class="acct-meta" style="color:#1d4ed8">📦 ${esc(a.source_root||a.source)}</div>`:''}
+    </div>`).join('') || '<div class="hint">未配置账号</div>';
+  const online=list.filter(a=>a.online).length;
+  const total=st.total_accounts||list.length||0;
+  $('#btnAcctPop').textContent = online+'/'+total+' 账号在线 ▾';
+  $('#wecom').textContent = st.wecom_running ? '企业微信运行中' : '未检测到企业微信进程';
+  $('#wecomDot').className = 'dot '+(st.wecom_running?'ok':'off');
+  $('#locked').textContent = st.locked_accounts && st.locked_accounts.length
+    ? '还有 '+st.locked_accounts.length+' 个账号未解锁：在企微里登录/切换后点「重新扫描」'
+    : '全部账号已解锁';
+  $('#exportRoot').textContent = st.export_root || '';
+}
+
+function searchTokens(raw){
+  // 子查询内部：、 空格 , ， + ; ； | 等粘贴分隔符自动拆词（/ 留给子查询分隔）
+  return String(raw||'').toLowerCase()
+    .split(/[、,，+;；|\s｜]+/).map(s=>s.trim()).filter(s=>s.length>0);
+}
+function searchQueries(raw){
+  // / 或 ／ 分隔多个独立子查询，结果取并集
+  return String(raw||'').split(/[\/／]+/)
+    .map(q=>searchTokens(q)).filter(t=>t.length>0);
+}
+function groupSearchBlob(g){
+  return [g.name,g.alias,g.original_name,g.id,g.remark,g.account,
+          (g.members||[]).join(' '),(g.tags||[]).join(' ')]
+    .map(x=>String(x||'').toLowerCase()).join(' | ');
+}
+function byActiveDesc(a,b){
+  return (b.last_timestamp||0)-(a.last_timestamp||0) ||
+         String(a.id||'').localeCompare(String(b.id||''));
+}
+function filterGroups(){
+  const queries=searchQueries($('#search').value);
+  if(!queries.length) return S.groups.slice().sort(byActiveDesc);
+  const hit=new Set();
+  for(const toks of queries){
+    for(const g of S.groups){
+      const blob=groupSearchBlob(g);
+      if(toks.some(t=>blob.includes(t))) hit.add(g.account+'|'+g.id);
+    }
+  }
+  return S.groups.filter(g=>hit.has(g.account+'|'+g.id)).sort(byActiveDesc);
+}
+
+function renderGroups(){
+  const list = filterGroups();
+  $('#groupCount').textContent = list.length+' / '+S.groups.length+' 个会话';
+  $('#groups').innerHTML = list.map(g=>{
+    const sel = S.selected && S.selected.id===g.id && S.selected.account===g.account;
+    const w = S.watched.includes(g.id);
+    const ex = S.exportGroups.has(groupKey(g));
+    const members=(g.members||[]).join('、') || String(g.id||'');
+    return `<div class="gcard ${sel?'sel':''}${ex?' expicked':''}" data-key="${esc(g.account+'|'+g.id)}" title="${esc(members)}">
+      <div class="gchecks">
+        <input type="checkbox" class="expbox" data-key="${esc(groupKey(g))}" ${ex?'checked':''} title="选入多会话合并导出">
+        <input type="checkbox" class="watchbox" data-id="${esc(g.id)}" ${w?'checked':''} title="加入每 5 分钟自动同步">
+      </div>
+      <div class="gbody">
+        <div class="gline1"><span class="gname">${esc(g.name||'')}</span>
+          ${g.remark?`<span class="tag">${esc(g.remark)}</span>`:''}
+          <span class="gcount">${g.messages||0} 条</span>
+          <span class="gtime">${esc(g.last_time||'')}</span></div>
+        <div class="gline2" title="${esc(members)}">${esc(members)}</div>
+      </div>
+    </div>`;
+  }).join('') || '<div class="hint">没有匹配的会话</div>';
+  $$('#groups .gcard[data-key]').forEach(card=>card.addEventListener('click', e=>{
+    if(e.target.classList.contains('watchbox') || e.target.classList.contains('expbox')) return;
+    const parts = card.dataset.key.split('|');
+    const g = S.groups.find(x => x.account===parts[0] && x.id===parts.slice(1).join('|'));
+    if(g) selectGroup(g);
+  }));
+  $$('#groups .expbox').forEach(cb=>{
+    cb.addEventListener('click', e=>e.stopPropagation());
+    cb.addEventListener('change', e=>{
+      e.stopPropagation();
+      const g=S.groups.find(x=>groupKey(x)===cb.dataset.key);
+      if(g) setExportGroup(g, cb.checked);
+      renderGroups(); updateExportSummary();
+    });
+  });
+  $$('#groups .watchbox').forEach(cb=>cb.addEventListener('change', e=>{
+    e.stopPropagation(); toggleWatch(cb.dataset.id, cb.checked);
+  }));
+}
+
+function setLiveState(text, cls){
+  $('#liveState').textContent = text;
+  $('#liveDot').className = 'dot ' + (cls || 'liveok');
+}
+
+async function selectGroup(g){
+  if(!g) return;
+  saveSel();                    // 切走前记住当前会话已勾选的消息
+  S.selected=g; S.lastId=''; renderGroups();
+  $('#selInfo').innerHTML = `当前选中：<b>${esc(g.name)}</b> <span class="mono">${esc(g.id)}</span> · 共 ${g.messages} 条`;
+  await loadMessages();
+}
+
+function buildMsgUrl(){
+  const g=S.selected; if(!g) return '';
+  let url='/api/messages?cid='+encodeURIComponent(g.id)+'&account='+encodeURIComponent(g.account)+'&range='+encodeURIComponent(S.range);
+  if(S.range==='custom'){
+    url += '&start='+encodeURIComponent($('#dtStart').value||'')+'&end='+encodeURIComponent($('#dtEnd').value||'');
+  }
+  return url;
+}
+
+async function loadMessages(){
+  if(!S.selected) return;
+  const g=S.selected, seq=++S.loadSeq;
+  const list=$('#msgList');
+  list.innerHTML='<div class="hint">正在读取并清洗消息…</div>';
+  $('#moreWrap').style.display='none';
+  let done=false;
+  const fail=(message)=>{
+    if(done || seq!==S.loadSeq) return;
+    done=true;
+    const msg=message||'未知错误';
+    list.innerHTML='<div class="hint errtext">读取失败：'+esc(msg)+
+      '<br><button class="fbtn" id="btnRetryMsgs" style="margin-top:6px">重试加载</button></div>';
+    const rb=$('#btnRetryMsgs');
+    if(rb) rb.addEventListener('click',()=>loadMessages());
+    setMsg('消息读取失败：'+msg,true);
+    S.messages=[]; S.selIds=new Set(); updateSelStat();
+  };
+  const watchdog=setTimeout(()=>fail('本地服务 35 秒未返回，请重试或点「刷新列表」'),35000);
+  try{
+    const r=await api(buildMsgUrl(), undefined, 40000);
+    if(seq!==S.loadSeq || S.selected!==g) return;   // 防抖/切群后丢弃过期响应
+    done=true;
+    S.messages=r.messages||[];
+    S.lastId=r.last_id||'';
+    S.selIds = restoreSelFor(S.selected, S.messages);
+    renderMsgList(true); updateSelStat();
+    const win = r.from || r.to ? `（${r.from||'最早'} ~ ${r.to||'现在'}）` : '（全部时间）';
+    $('#selInfo').innerHTML = `当前选中：<b>${esc(g.name)}</b> <span class="mono">${esc(g.id)}</span><br>
+      <span class="small">筛选结果 ${r.count} / ${r.total} 条，时间正序 ${win}</span>`;
+    setLiveState('实时同步中 · 上次更新 '+(S.liveAt||'刚刚'), 'liveok');
+  }catch(e){ fail(e && e.message ? e.message : String(e)); }
+  finally{ clearTimeout(watchdog); }
+}
+
+function forwardHTML(m){
+  const c=m.forward, g=S.selected;
+  if(!c || !g) return '';
+  const base='/api/thumb?cid='+encodeURIComponent(g.id)+'&account='+encodeURIComponent(g.account)+
+             '&mid='+encodeURIComponent(m.id);
+  const subs=(c.subs||[]).map((s,si)=>{
+    const depth=Math.max(1,Math.min(s.depth||1,6));
+    const files=(s.files||[]).map((f,fi)=>{
+      const label=esc(f.name||'图片');
+      if(f.thumb){
+        const src=base+'&i='+si+'&j='+fi;
+        return `<img class="fwd-thumb" loading="lazy" src="${src}" data-full="${src}" title="${label} · 点击放大">`;
+      }
+      if(f.match){
+        return `<span class="fwd-file">📎 ${label} <span class="small">已精准匹配（${esc(f.match)}）· 导出时按原格式打包</span></span>`;
+      }
+      return `<span class="fwd-file">📎 ${label}<span class="fwd-miss">未缓存：点开该卡片并查看原图/下载文件后重新导出</span></span>`;
+    }).join('');
+    const vdur=s.voice?(s.voice.duration||0):0;
+    const vtag=s.voice?(s.voice.transcript
+      ? `[语音 ${vdur}" · 企微转文字（可能存在同音误差）]`
+      : `[语音 ${vdur}" · 尚未在企微转文字]`):'';
+    const vAudio=s.voice?((s.files||[]).filter(f=>f.source&&/Voice/i.test(f.source))
+      .map(f=>`<audio controls preload="none" src="/api/voice?path=${encodeURIComponent(f.source)}"></audio>`).join('')):'';
+    const voiceBox=s.voice?`<div class="voicebox"><div class="vtag">🎙️ ${esc(vtag)}</div>
+      ${s.voice.transcript?`<div class="vtext">${esc(s.voice.transcript)}</div>`:''}
+      ${vAudio||'<div class="small">直接听导出 ZIP 里的 MP3 原声。</div>'}</div>`:'';
+    const cardNote=s.is_card
+      ? `<div class="fwd-nested">🧩 ${esc(s.card_title||'合并转发聊天记录')} · 以下为该层子消息（按原始时间正序）</div>` : '';
+    return `<div class="fwd-item ${s.is_card?'fwd-parent':''}" style="margin-left:${(depth-1)*20}px">
+      <div class="fwd-meta"><span class="tag layer">第${depth}层转发</span>
+        <span class="mono">${esc(s.time)}</span><b>${esc(s.sender)}</b>
+        <span class="tag">${esc(s.kind)}</span></div>
+      ${cardNote}
+      <p class="fwd-text">${esc(s.text||'（图片/文件，无文字正文）')}</p>
+      ${voiceBox}
+      ${files?`<div class="fwd-files">${files}</div>`:''}
+    </div>`;
+  }).join('');
+  const total=c.total_files??c.images??0;
+  return `<details class="fwd" open>
+    <summary>🧩 ${esc(c.card_type||'合并转发')} · ${esc(c.title)} · ${c.count} 条 / ${c.levels||1} 层嵌套 / ${total} 个附件（已精准匹配 ${c.matched}，未缓存 ${c.missing}）</summary>
+    <div class="fwd-body">${subs}</div></details>`;
+}
+
+function voiceHTML(v){
+  if(!v) return '';
+  const dur=v.duration||0;
+  const tag=v.transcript
+    ? `[语音 ${dur}" · 企微转文字（可能存在同音误差）]`
+    : `[语音 ${dur}" · 尚未在企微转文字]`;
+  const audio=v.source
+    ? `<audio controls preload="none" src="/api/voice?path=${encodeURIComponent(v.source)}"></audio>`
+    : '<div class="small">原语音缓存未找到，无法试听；请在企业微信里点击播放/下载后刷新。</div>';
+  return `<div class="voicebox"><div class="vtag">🎙️ ${esc(tag)}</div>
+    ${v.transcript?`<div class="vtext">${esc(v.transcript)}</div>`
+      :'<div class="small">请在企业微信里点「转文字」，或直接听下方 MP3 原声。</div>'}
+    ${audio}</div>`;
+}
+
+function msgHTML(m){
+  const noise=!!m.system_noise;
+  const on=!noise && S.selIds.has(m.id);
+  const files=(m.files||[]).map(f=>`<span class="filetag">📎 ${esc(f)}</span>`).join('');
+  const body=noise
+    ? `<details class="sysnoise"><summary>系统/内部消息（已折叠，默认不导出）</summary><div class="small">${esc(m.content)}</div></details>`
+    : `<div class="msg-text">${esc(m.content)}</div>`;
+  return `<div class="msg-item ${on?'selmsg':''}${noise?' sysrow':''}" data-id="${esc(m.id)}">
+    <input type="checkbox" class="mcheck" data-id="${esc(m.id)}" ${on?'checked':''} ${noise?'disabled':''} title="${noise?'系统消息默认不导出':'勾选这条消息'}">
+    <div class="msg-body">
+      <div class="msg-meta"><span class="mono">${esc(m.time)}</span><b>${esc(m.sender)}</b>
+        <span class="tag">${esc(m.type)}</span>
+        ${noise?'<span class="tag">系统</span>':''}
+        <button class="mini" data-from="${esc(m.id)}" ${noise?'disabled style="opacity:.45"':''} title="清空后只选这条到最后，跳过前面的旧单子">从此条往后全选</button></div>
+      ${body}
+      ${m.voice?voiceHTML(m.voice):''}
+      ${files?`<div class="files">${files}</div>`:''}
+      ${m.forward?forwardHTML(m):''}
+    </div></div>`;
+}
+
+function renderMsgList(reset){
+  const box=$('#msgList');
+  if(reset){ box.innerHTML=''; S.rendered=0; }
+  const slice=S.messages.slice(S.rendered, S.rendered+S.PAGE);
+  box.insertAdjacentHTML('beforeend', slice.map(msgHTML).join('') ||
+                         (reset?'<div class="hint">该时间段没有消息</div>':''));
+  S.rendered += slice.length;
+  $('#moreWrap').style.display = S.rendered < S.messages.length ? 'block' : 'none';
+  $('#moreInfo').textContent = `已显示 ${S.rendered} / ${S.messages.length} 条`;
+}
+
+async function pollChanges(){
+  if(!S.selected || S.liveBusy) return;
+  const g=S.selected;
+  S.liveBusy=true;
+  try{
+    const r=await api('/api/changes?cid='+encodeURIComponent(g.id)+
+                      '&account='+encodeURIComponent(g.account)+
+                      '&last_id='+encodeURIComponent(S.lastId));
+    if(!r.ok) throw new Error(r.error||'检查失败');
+    S.liveAt=r.last_updated;
+    setLiveState('实时同步中 · 上次更新 '+r.last_updated,
+                 r.method==='pending'?'idle':'liveok');
+    if(r.changed && S.selected===g && !document.hidden) await mergeMessages();
+  }catch(e){ setLiveState('实时同步暂时不可用：'+e.message, 'off'); }
+  finally{ S.liveBusy=false; }
+}
+
+async function mergeMessages(){
+  // 增量刷新：只在列表末尾追加新节点，保留已有勾选状态与滚动位置
+  const g=S.selected; if(!g) return;
+  const r=await api(buildMsgUrl());
+  if(S.selected!==g) return;
+  const fresh=r.messages||[];
+  const oldIds=new Set(S.messages.map(m=>m.id));
+  const added=fresh.filter(m=>!oldIds.has(m.id));
+  S.messages=fresh; S.lastId=r.last_id||'';
+  if(!added.length){ updateSelStat(); return; }
+  for(const m of added) if(!m.system_noise) S.selIds.add(m.id);   // 新进来的消息自动勾选（系统空行除外）
+  const box=$('#msgList'), scroll=box.scrollTop;
+  const tailStart=fresh.length-added.length;
+  const isTail=tailStart>=0 && added.every((m,i)=>fresh[tailStart+i] && fresh[tailStart+i].id===m.id);
+  if(isTail && S.rendered===tailStart && S.rendered>0){
+    box.insertAdjacentHTML('beforeend', added.map(msgHTML).join(''));
+    S.rendered += added.length;
+    $('#moreWrap').style.display = S.rendered < S.messages.length ? 'block' : 'none';
+    $('#moreInfo').textContent = `已显示 ${S.rendered} / ${S.messages.length} 条`;
+  }else{
+    renderMsgList(true);
+  }
+  box.scrollTop=scroll;
+  syncChecks(); updateSelStat();
+  setMsg('实时同步：新增 '+added.length+' 条消息，已自动勾选');
+}
+
+function syncChecks(){
+  $$('#msgList .mcheck').forEach(cb=>{
+    const on=S.selIds.has(cb.dataset.id);
+    cb.checked=on; cb.closest('.msg-item').classList.toggle('selmsg',on);
+  });
+}
+function updateSelStat(){
+  let n=0,f=0;
+  for(const m of S.messages) if(S.selIds.has(m.id)){ n++; f+=(m.files||[]).length; }
+  $('#selStat').textContent=`已选 ${n} 条消息 / 含 ${f} 个附件`;
+  saveSel();
+  updateExportSummary();
+}
+
+async function toggleWatch(id, on){
+  if(on && !S.watched.includes(id)) S.watched.push(id);
+  if(!on) S.watched = S.watched.filter(x=>x!==id);
+  try{
+    await api('/api/watch', {ids:S.watched});
+    $('#watchCount').textContent = S.watched.length;
+    renderGroups();
+    setMsg('定时同步清单已更新（'+S.watched.length+' 个群）');
+  }catch(e){ setMsg('更新失败：'+e.message, true); }
+}
+
+function resetExportButtons(){
+  updateExportSummary();
+  $('#btnOpen').disabled = !S.lastZipPath;
+  $('#btnDownload').disabled = !S.lastZipPath;
+  $('#btnOpenLite').disabled = !S.lastLiteZipPath;
+  $('#btnDownloadLite').disabled = !S.lastLiteZipPath;
+}
+
+async function pollTask(id, done, started){
+  const t0 = started || Date.now();
+  const box=$('#taskLog'); box.style.display='block';
+  let r;
+  try{
+    const ctrl=new AbortController();
+    const timer=setTimeout(()=>ctrl.abort(), 12000);
+    try{
+      const resp=await fetch('/api/task?id='+encodeURIComponent(id),
+                             {signal:ctrl.signal, cache:'no-store'});
+      if(!resp.ok) throw new Error('HTTP '+resp.status+' '+resp.statusText);
+      r=await resp.json();
+    }finally{ clearTimeout(timer); }
+  }catch(e){
+    const why=(e && e.name==='AbortError')
+      ? '查询任务状态超时：本地服务 12 秒无响应'
+      : ('无法连接本地服务：'+((e&&e.message)||String(e)));
+    box.textContent=(box.textContent||'')+'\n[错误] '+why;
+    done({status:'error', error:why, log:(box.textContent||'').split('\n')});
+    return;
+  }
+  box.textContent=(r.log||[]).join('\n')||'处理中…';
+  if(r.status==='running'){
+    const limit=(Number(r.timeout_s||240)+15)*1000;
+    if(Date.now()-t0>limit){
+      const why='导出超时：超过 '+Math.round(limit/1000)+' 秒仍未完成，已停止等待';
+      done({status:'error', error:why, log:r.log||[]});
+      return;
+    }
+    setTimeout(()=>pollTask(id,done,t0), 1500);
+    return;
+  }
+  done(r);
+}
+
+function fmtSize(kb){
+  const n=Number(kb||0);
+  return n>=1024 ? (n/1024).toFixed(1)+' MB' : (Math.round(n*10)/10)+' KB';
+}
+function renderExport(task){
+  if(task.status==='error'){
+    const why=String(task.error||'未知错误');
+    const logs=(task.log||[]).filter(Boolean);
+    $('#exportResult').innerHTML=
+      '<div class="missing" style="border-color:#fecaca;background:#fef2f2;color:#991b1b">'
+      +'<b>导出失败 / 已中止</b><br><span style="color:#b91c1c;font-weight:600">'+esc(why)+'</span></div>'
+      +(logs.length?'<div class="path"><b>任务日志</b><br><span style="white-space:pre-wrap">'
+        +logs.map(esc).join('<br>')+'</span></div>':'');
+    const box=$('#taskLog');
+    box.style.display='block';
+    box.innerHTML='<div style="color:#dc2626;font-weight:700">❌ '+esc(why)+'</div>'
+      +'<div style="white-space:pre-wrap;color:#991b1b">'+esc(logs.join('\n'))+'</div>';
+    resetExportButtons();
+    setMsg('导出失败：'+why, true); return;
+  }
+  const d=task.result||{}, miss=d.missing||[], ai=d.all_for_ai||{}, files=d.files||[], entries=d.zip_entries||[], cnt=d.counts||{};
+  const classified=(ai.documents||0)+(ai.images||0)+(ai.other_files||0);
+  const consistent=(cnt.attachments??d.attachments_ok??0)===classified;
+  const lite=d.lite||{};
+  const q=d.quality||{};
+  const qTotal=Number(q.total??d.messages??0), qComplete=Number(q.complete??qTotal);
+  const qEmpty=(q.empty_shell||[]).length, qFb=(q.fallback||[]).length;
+  const qBad=qEmpty>0||q.attachment_sequence_ok===false||q.chat_md_matches===false;
+  const qualityHTML=`<div class="path" style="padding:8px 10px;border-radius:9px;border:1px solid ${qBad?'#fecaca':'#bbf7d0'};background:${qBad?'#fef2f2':'#f0fdf4'};color:${qBad?'#991b1b':'#166534'}">
+      🧪 解析完整度：<b>${qComplete}/${qTotal}</b> 条完整（${qEmpty} 条空壳${qFb?`，${qFb} 条未知类型已标注`:''}）
+      · 附件编号 ${q.attachment_sequence_ok===false?'⚠️ 异常':'连续 ✅'}
+      · 与 000_chat.md ${q.chat_md_matches===false?'⚠️ 不一致':'对应 ✅'}
+      ${qEmpty?`<div style="color:#b91c1c;font-weight:600">空壳消息：${(q.empty_shell||[]).map(x=>esc(String(x.id))+'(ct='+esc(String(x.ct))+')').join('、')}</div>`:''}
+    </div>`;
+  const ex=d.extra_scan||{}, exHits=ex.hits||[];
+  const extraHitHTML = exHits.length ? `<div class="path" style="border-color:#bbf7d0;background:#f0fdf4;color:#166534">
+      🔎 <b>来自补扫目录命中 ${exHits.length} 个</b>（企微 Cache 未命中，已在本机常用目录精准找回）：
+      ${exHits.map(h=>`<code>${esc(h.name)}</code> ← ${esc(h.dir)}（${(h.size/1024).toFixed(1)} KB）`).join('；')}
+    </div>` : '';
+  const skipRows=(lite.skipped||[]).map(x=>`<div>${esc(x.number)} · <code>${esc(x.name)}</code> ${x.size_mb} MB</div>`).join('');
+  const cmpHTML = lite.generated ? `
+    <div class="litecmp">
+      <div class="box">
+        <div class="t">📦 完整原件包（含所有原格式文件）</div>
+        <div class="v">${fmtSize(lite.full_size_kb)}</div>
+        <div class="p"><code>${esc(d.zip_path||'')}</code></div>
+      </div>
+      <div class="box lite">
+        <div class="t">🚀 网页 AI 轻量包（大图瘦身 / 跳过超大原件）</div>
+        <div class="v">${fmtSize(lite.zip_size_kb)}</div>
+        <div class="p"><code>${esc(lite.zip_path||'')}</code> · 为完整包的 ${lite.ratio_pct??'—'}%，节省 ${fmtSize(lite.saved_kb)}</div>
+      </div>
+    </div>
+    <div class="path">轻量包处理：大图瘦身 ${(lite.shrunk||[]).length} 张（长边≤1600px / JPG 82%）· 超大原件跳过 ${(lite.skipped||[]).length} 个 · 原样保留 ${lite.kept_count||0} 个；<code>000_chat.md / 001_… / ALL_FOR_AI.md</code> 顺序与编号同完整包 100% 对应。</div>
+    ${skipRows?`<div class="missing"><b>超大原件未进轻量包（原件仍保存在完整包与本机缓存）</b>${skipRows}</div>`:''}
+  ` : `<div class="path">📦 完整原件包：<code>${esc(d.zip_path||'')}</code> ${fmtSize(d.zip_size_kb)}${lite.reason==='under_20mb'?' · 体积 ≤20MB，未额外生成轻量包（可勾选上方选项强制生成）':''}</div>`;
+  $('#exportResult').innerHTML=`
+    <div class="stats">
+      <div class="stat"><b>${d.messages||0}</b><span>已选消息（时间正序）</span></div>
+      <div class="stat"><b>${d.attachments_ok||0}</b><span>精准匹配附件</span></div>
+      <div class="stat"><b>${entries.length}</b><span>ZIP 内条目</span></div>
+      <div class="stat"><b>${ai.documents||0}</b><span>展开的文档正文</span></div>
+      <div class="stat"><b>${ai.images||0}</b><span>图片附件</span></div>
+      <div class="stat"><b>${ai.other_files||0}</b><span>其它原格式文件</span></div>
+      <div class="stat"><b>${ai.forward_cards||0}</b><span>转发/图文卡片 · ${ai.forward_subs||0} 条（含各层）</span></div>
+      <div class="stat"><b>${miss.length}</b><span>附件未下载</span></div>
+      <div class="stat"><b>${consistent?'✅':'⚠️'}</b><span>统计一致 ${cnt.attachments??d.attachments_ok??0} = ${classified}</span></div>
+    </div>
+    ${cmpHTML}
+    ${qualityHTML}
+    ${Number(d.deduplicated)>0?`<div class="path">🧹 附件 MD5 去重：跳过 ${Number(d.deduplicated)} 个重复附件（原位标注「[同附件 00X -> …（已去重）]」），完整包与轻量包同步生效。</div>`:''}
+    ${d.multi?`<div class="path">🧩 本次合并导出 ${(d.merged_items||[]).length} 个会话：${(d.merged_items||[]).map(x=>esc(x.name)+'（'+x.count+' 条）').join(' ＋ ')}；消息按真实时间统一交错排序，附件全局连续编号。</div>`:''}
+    ${extraHitHTML}
+    <div class="path">📄 包内顺序：<code>000_chat.md → 001_… → … → ALL_FOR_AI.md</code>（共 ${entries.length} 个条目，按聊天出现顺序排列）</div>
+    <div class="path">📁 导出根目录：<code>${esc(d.export_root||d.out_dir||'')}</code>（只新增这一个 ZIP，不生成群文件夹）</div>
+    <div class="filelist"><b>按聊天顺序编号的附件（共 ${files.length} 个）</b>
+      ${files.length? files.slice(0,30).map(x=>`<div>${esc(x.number)} · ${esc(x.time)} · <code>${esc(x.renamed)}</code> ${x.size_kb} KB <span class="small">${esc(x.origin||'')} · ${esc(x.source_kind||'企微缓存')}</span></div>`).join('') : '<div>本次没有匹配到附件</div>'}
+      ${files.length>30?`<div>… 其余 ${files.length-30} 个见 ZIP 内 ALL_FOR_AI.md 末尾清单</div>`:''}
+    </div>
+    ${miss.length? `
+    <div class="missing" style="border-color:#fecaca;background:#fef2f2;color:#991b1b">
+      <div style="color:#b91c1c;font-size:15px;font-weight:700">⚠️ 有 ${miss.length} 个文件未找到原件，未打包进 ZIP</div>
+      <div style="margin:6px 0;font-weight:600">请在企业微信里点击接收/下载后重新导出；若已另存到本机，请把所在目录加入上方「④ 补扫目录」。</div>
+      ${miss.slice(0,20).map((m,i)=>`<div>${i+1}. <code>${esc(m.reason)}</code> · 消息 ${esc(String(m.local_id))}<br><span class="small">${esc(m.hint||'')}</span></div>`).join('')}
+      ${miss.length>20?`<div>… 其余 ${miss.length-20} 个见 ZIP 内 ALL_FOR_AI.md</div>`:''}
+    </div>` : '<div class="missing"><b>附件齐全 ✅</b><div>本次勾选消息的附件全部命中，已按编号打包。</div></div>'}
+  `;
+  S.lastZipPath=d.zip_path; S.lastZipName=d.zip_name; S.lastOutDir=d.out_dir;
+  S.lastLiteZipPath=lite.generated?lite.zip_path:null;
+  S.lastLiteZipName=lite.generated?lite.zip_name:null;
+  $('#btnOpen').disabled=false; $('#btnDownload').disabled=false;
+  $('#btnOpenLite').disabled=!lite.generated; $('#btnDownloadLite').disabled=!lite.generated;
+  setMsg(lite.generated?'导出完成：完整包 + 网页 AI 轻量包均已生成':'导出完成：已生成单个 ZIP，可直接拖给 AI');
+  if($('#autoLocate').checked) setTimeout(openFullFolder, 250);
+}
+
+async function doExport(){
+  if(!S.selected) return;
+  saveSel();
+  const multi=activeExportEntries().length>=2;
+  const zip_mode=$('#zipTimestamp').checked ? 'timestamp' : 'overwrite';
+  const lite_mode=$('#alwaysLite').checked ? 'always' : 'auto';
+  let payload, total=0;
+  if(multi){
+    const items=[];
+    for(const e of activeExportEntries()){
+      const key=e.key, meta=e.meta;
+      let ids=(S.msgSelByGroup.get(key) && [...S.msgSelByGroup.get(key)]) || [];
+      if(!ids.length){
+        const info=S.groupInfo.get(key);
+        if(info && info.ids && info.ids.length) ids=info.ids.slice();
+        else{
+          try{
+            const r=await api(msgUrlFor(meta));
+            ids=(r.messages||[]).filter(m=>!m.system_noise).map(m=>m.id);
+          }catch(e){ ids=[]; }
+        }
+      }
+      if(ids.length) items.push({account:meta.account, cid:meta.id, name:meta.name, ids});
+    }
+    if(items.length<2){ setMsg('合并导出至少需要 2 个会话且各有已选消息',true); return; }
+    total=items.reduce((s,x)=>s+x.ids.length,0);
+    const first=String(items[0].name||'').split('·')[0].trim().slice(0,40);
+    payload={items, name:'合并'+items.length+'会话_'+first, zip_mode, lite_mode};
+  }else{
+    const g=S.selected;
+    const ids=S.messages.filter(m=>S.selIds.has(m.id)).map(m=>m.id);
+    if(!ids.length){ setMsg('请先勾选消息',true); return; }
+    total=ids.length;
+    payload={cid:g.id, account:g.account, name:g.name, ids, zip_mode, lite_mode};
+  }
+  if(total>1000 && !confirm('当前勾选了 '+total+' 条消息，可能包含多个旧单子且导出耗时较长。\\n建议用「今天 / 近3天」或「从此条往后全选」缩小范围。确认仍要导出？')) return;
+  $('#btnExport').disabled=true; $('#btnOpen').disabled=true; $('#btnDownload').disabled=true;
+  $('#btnOpenLite').disabled=true; $('#btnDownloadLite').disabled=true;
+  $('#exportResult').innerHTML='<div class="hint">正在'+(
+    multi?'合并导出 '+activeExportEntries().length+' 个会话':'导出')+'共 '+total+
+    ' 条消息、匹配附件并打包为单个 ZIP'+(($('#alwaysLite').checked)?'（同时生成网页 AI 轻量包）':'')+'…</div>';
+  openHint(true); briefHint('正在导出 '+total+' 条消息…');
+  try{
+    const t=await api('/api/export', payload);
+    await pollTask(t.task_id, renderExport);
+    briefHint('导出完成 · 展开查看解析完整度与未下载提醒');
+  }catch(e){ $('#exportResult').innerHTML='<div class="hint">导出失败：'+esc(e.message)+'</div>'; briefHint('导出失败：'+e.message); setMsg(e.message,true); }
+  finally{ updateSelStat(); resetExportButtons(); }
+}
+
+async function doRescan(){
+  $('#btnRescan').disabled=true;
+  $('#taskLog').style.display='block'; $('#taskLog').textContent='正在扫描企业微信内存，请稍候…';
+  try{
+    const t=await api('/api/rescan', {});
+    await pollTask(t.task_id, async task=>{
+      if(task.status==='error'){ setMsg('重扫失败：'+(task.error||''), true); }
+      else{
+        const r=task.result||{};
+        setMsg('重扫完成'+(r.added&&r.added.length?('，新增 '+r.added.length+' 个账号'):''));
+        await loadAll();
+        if(S.selected) await loadMessages();
+      }
+      $('#btnRescan').disabled=false;
+    });
+  }catch(e){ setMsg(e.message,true); $('#btnRescan').disabled=false; }
+}
+
+async function syncToggle(){
+  const btn=$('#btnSync'), errbox=$('#syncError');
+  const want=!S.syncEnabled;
+  btn.disabled=true; btn.textContent=want?'正在开启…':'正在停止…';
+  if(errbox){ errbox.style.display='none'; errbox.textContent=''; }
+  try{
+    await api('/api/sync-control',{enabled:want});
+    // 回读真实状态，不只信控制接口的返回值
+    const st=await api('/api/sync-status');
+    S.syncEnabled=!!st.enabled;
+    renderSyncControls();
+    if(S.syncEnabled!==want)
+      throw new Error('状态未生效：期望 '+(want?'开启':'停止')+'，实际 '+(S.syncEnabled?'运行中':'未开启'));
+    setMsg(S.syncEnabled?'已开启每 5 分钟自动同步':'已停止自动同步');
+  }catch(e){
+    const msg=e && e.message ? e.message : String(e);
+    if(errbox){ errbox.textContent='同步开关失败：'+msg; errbox.style.display='block'; }
+    setMsg('同步开关失败：'+msg,true);
+    try{ const st=await api('/api/sync-status'); S.syncEnabled=!!st.enabled; renderSyncControls(); }catch(_){}
+  }finally{ btn.disabled=false; renderSyncControls(); }
+}
+function renderSyncControls(){
+  $('#btnSync').textContent = S.syncEnabled?'停止同步':'开启自动同步';
+  $('#btnSync').className = 'btn'+(S.syncEnabled?' danger':'');
+  $('#syncState').textContent = S.syncEnabled?'运行中（每 5 分钟）':'未开启';
+  $('#syncDot').className = 'dot '+(S.syncEnabled?'ok':'idle');
+}
+
+async function openFolder(path, label){
+  if(!path){ setMsg('请先导出生成 ZIP',true); return; }
+  try{ await api('/api/open-folder',{path}); setMsg('已在资源管理器中定位并选中 '+(label||'ZIP')); }
+  catch(e){ setMsg(e.message,true); }
+}
+function openFullFolder(){ return openFolder(S.lastZipPath, '完整原件包'); }
+function openLiteFolder(){ return openFolder(S.lastLiteZipPath, '网页 AI 轻量包'); }
+
+function downloadZip(path, name, apiPath){
+  if(!path){ setMsg('请先导出生成 ZIP',true); return; }
+  const url=(apiPath||'/api/download-zip')+'?path='+encodeURIComponent(path);
+  const a=document.createElement('a');
+  a.href=url; a.download=name||'export.zip';
+  document.body.appendChild(a); a.click(); a.remove();
+  setMsg('已触发浏览器下载：'+(name||'ZIP'));
+}
+function downloadFullZip(){ return downloadZip(S.lastZipPath, S.lastZipName, '/api/download-zip'); }
+function downloadLiteZip(){ return downloadZip(S.lastLiteZipPath, S.lastLiteZipName, '/api/download-lite'); }
+
+// ---------------------------------------------------------------- 补扫目录管理
+async function loadExtraDirs(){
+  try{
+    const r=await api('/api/extra-scan-dirs');
+    S.extraDirs=r.dirs||[]; S.extraDefaults=r.defaults||[];
+    renderExtraDirs();
+  }catch(e){
+    $('#extraDirList').innerHTML='<div class="small" style="color:#dc2626">读取补扫目录失败：'+esc(e.message)+'</div>';
+  }
+}
+function renderExtraDirs(){
+  const box=$('#extraDirList');
+  if(!S.extraDirs.length){
+    box.innerHTML='<div class="hint">当前没有补扫目录；导出时只查企微 Cache。</div>'; return;
+  }
+  box.innerHTML=S.extraDirs.map(d=>
+    `<span class="exdir"><code>${esc(d)}</code><button type="button" data-dir="${esc(d)}" title="移除此目录">✕</button></span>`).join('');
+  $$('#extraDirList .exdir button').forEach(btn=>{
+    btn.addEventListener('click', ()=>saveExtraDirs(S.extraDirs.filter(x=>x!==btn.dataset.dir)));
+  });
+}
+async function saveExtraDirs(dirs){
+  try{
+    const r=await api('/api/extra-scan-dirs',{dirs});
+    S.extraDirs=r.dirs||[]; renderExtraDirs();
+    setMsg('补扫目录已保存到 config.json（'+S.extraDirs.length+' 个）');
+  }catch(e){ setMsg(e.message,true); }
+}
+
+async function loadAll(){
+  try{
+    const st=await api('/api/status'); renderAccounts(st);
+    const cv=await api('/api/conversations'); S.groups=cv.conversations||[];
+    const w=await api('/api/watch'); S.watched=w.ids||[]; $('#watchCount').textContent=S.watched.length;
+    const ss=await api('/api/sync-status');
+    $('#lastSync').textContent=ss.last_sync||'尚未同步';
+    S.syncEnabled=!!ss.enabled; renderSyncControls();
+    renderGroups(); refreshCodexButton(); setMsg('已加载 '+S.groups.length+' 个会话');
+  }catch(e){ setMsg('加载失败：'+e.message, true); }
+}
+
+// 搜索即联动：300ms 防抖后自动高亮并选中第一条匹配结果，右侧立刻切换
+function onSearchInput(){
+  clearTimeout(S.searchTimer);
+  S.searchTimer=setTimeout(async ()=>{
+    const kw=($('#search').value||'').trim();
+    const list=filterGroups();
+    renderGroups();
+    if(kw && list.length) await selectGroup(list[0]);
+  },300);
+}
+
+$('#search').addEventListener('input', onSearchInput);
+$('#btnRescan').addEventListener('click', doRescan);
+$('#btnReload').addEventListener('click', async ()=>{ setMsg('正在刷新…'); try{ await api('/api/refresh',{}); await loadAll(); if(S.selected) await loadMessages(); }catch(e){setMsg(e.message,true);} });
+$('#btnExport').addEventListener('click', doExport);
+$('#btnExportAll').addEventListener('click', ()=>{
+  for(const g of filterGroups()) setExportGroup(g,true);
+  renderGroups(); updateExportSummary();
+});
+$('#btnExportNone').addEventListener('click', ()=>{
+  S.exportGroups.clear(); renderGroups(); updateExportSummary();
+});
+$('#btnCodexStart').addEventListener('click', doCodexStart);
+$('#btnCodexReload').addEventListener('click', ()=>codexStatus().catch(e=>setMsg(e.message,true)));
+$$('[data-save-root]').forEach(b=>b.addEventListener('click', async ()=>{
+  const t=b.dataset.saveRoot, input=$('#'+t+'Root');
+  try{
+    const d=await api('/api/codex/root',{root:input.value.trim(),target:t});
+    setMsg((t==='codex'?'Codex':'反重力')+'根目录已保存：'+d.root);
+    await codexStatus();
+  }catch(e){ setMsg(e.message||String(e),true); }
+}));
+$$('[data-open-root]').forEach(b=>b.addEventListener('click', async ()=>{
+  try{
+    const d=await api('/api/codex/open-root',{target:b.dataset.openRoot});
+    setMsg('已打开：'+d.folder);
+  }catch(e){ setMsg(e.message||String(e),true); }
+}));
+$$('#targetSwitch .segb').forEach(b=>
+  b.addEventListener('click',()=>setLiveTarget(b.dataset.target)));
+$$('#targetFilter .cap').forEach(b=>
+  b.addEventListener('click',()=>setLiveFilter(b.dataset.filter)));
+setLiveTarget(S.liveTarget);
+$('#btnConflictClose').addEventListener('click',()=>{
+  const bar=$('#conflictBar'); if(bar) bar.style.display='none';
+});
+$('#btnGotoOriginal').addEventListener('click', ()=>{
+  if(S.conflictProject){
+    setLiveTarget(S.conflictProject.target||'codex');
+    showCodexPath(S.conflictProject.folder, true);
+  }
+  const bar=$('#conflictBar'); if(bar) bar.style.display='none';
+  switchTab('codex'); codexStatus().catch(()=>{});
+});
+// 界面卡片每 5 秒静默刷新（真正的增量同步在后端独立线程里，同样 5 秒水印检查）
+setInterval(()=>{ codexStatus().catch(()=>{}); }, 5000);
+codexStatus().catch(()=>{});
+$('#btnOpen').addEventListener('click', openFullFolder);
+$('#btnDownload').addEventListener('click', downloadFullZip);
+$('#btnOpenLite').addEventListener('click', openLiteFolder);
+$('#btnDownloadLite').addEventListener('click', downloadLiteZip);
+$('#btnSync').addEventListener('click', syncToggle);
+
+$$('.fbtn[data-range]').forEach(b=>b.addEventListener('click',()=>{
+  $$('.fbtn[data-range]').forEach(x=>x.classList.remove('on'));
+  b.classList.add('on'); S.range=b.dataset.range; loadMessages();
+}));
+$('#btnCustom').addEventListener('click',()=>{
+  if(!$('#dtStart').value && !$('#dtEnd').value){ setMsg('请先选择开始或结束时间',true); return; }
+  $$('.fbtn[data-range]').forEach(x=>x.classList.remove('on'));
+  S.range='custom'; loadMessages();
+});
+$('#btnAll').addEventListener('click',()=>{ S.selIds=new Set(S.messages.filter(m=>!m.system_noise).map(m=>m.id)); syncChecks(); updateSelStat(); });
+$('#btnInvert').addEventListener('click',()=>{
+  const next=new Set();
+  for(const m of S.messages) if(!S.selIds.has(m.id)) next.add(m.id);
+  S.selIds=next; syncChecks(); updateSelStat();
+});
+$('#btnNone').addEventListener('click',()=>{ S.selIds=new Set(); syncChecks(); updateSelStat(); });
+$('#btnMore').addEventListener('click',()=>renderMsgList(false));
+$('#msgList').addEventListener('change', e=>{
+  if(!e.target.classList.contains('mcheck')) return;
+  const id=e.target.dataset.id;
+  if(e.target.checked) S.selIds.add(id); else S.selIds.delete(id);
+  e.target.closest('.msg-item').classList.toggle('selmsg', e.target.checked);
+  updateSelStat();
+});
+$('#msgList').addEventListener('click', e=>{
+  const img=e.target.closest('.fwd-thumb');
+  if(img){ window.open(img.dataset.full, '_blank'); return; }
+  const btn=e.target.closest('[data-from]');
+  if(!btn) return;
+  const idx=S.messages.findIndex(m=>m.id===btn.dataset.from);
+  if(idx<0) return;
+  S.selIds=new Set(S.messages.slice(idx).filter(m=>!m.system_noise).map(m=>m.id));
+  syncChecks(); updateSelStat();
+  setMsg('已从第 '+(idx+1)+' 条选到最后，共 '+S.selIds.size+' 条（前面旧单子已跳过）');
+});
+setInterval(async ()=>{
+  try{ const r=await api('/api/logs?n=80'); const el=$('#logs'); el.textContent=(r.lines||[]).join('\n')||'暂无日志'; el.scrollTop=el.scrollHeight; }catch(e){}
+}, 3000);
+// 右侧聊天记录实时自动同步：每 8 秒静默检查 message.db / WAL 新写入
+setInterval(pollChanges, 8000);
+setTimeout(pollChanges, 2500);
+$('#btnExtraAdd').addEventListener('click', async ()=>{
+  const v=$('#extraDirInput').value.trim();
+  if(!v){ setMsg('请先粘贴目录完整路径',true); return; }
+  if(S.extraDirs.some(x=>x.toLowerCase()===v.toLowerCase())){ setMsg('该目录已在列表中',true); return; }
+  await saveExtraDirs(S.extraDirs.concat([v]));
+  $('#extraDirInput').value='';
+});
+$('#btnExtraReset').addEventListener('click', async ()=>{
+  try{ const r=await api('/api/extra-scan-dirs'); await saveExtraDirs(r.defaults||[]); }
+  catch(e){ setMsg(e.message,true); }
+});
+$('#extraDirInput').addEventListener('keydown', e=>{ if(e.key==='Enter') $('#btnExtraAdd').click(); });
+
+// ===================== 一屏工作台交互层 =====================
+function switchTab(name){
+  $$('.tabpanel').forEach(p=>p.classList.toggle('active', p.dataset.tab===name));
+  $$('.tabs .tab').forEach(b=>b.classList.toggle('on', b.dataset.tab===name));
+}
+$$('.tabs .tab').forEach(b=>b.addEventListener('click',()=>switchTab(b.dataset.tab)));
+
+$('#btnAcctPop').addEventListener('click', e=>{
+  e.stopPropagation(); $('#acctPop').classList.toggle('open');
+});
+$('#btnAcctPopClose').addEventListener('click', ()=>$('#acctPop').classList.remove('open'));
+document.addEventListener('click', e=>{
+  if(!e.target.closest('#acctPop') && !e.target.closest('#btnAcctPop'))
+    $('#acctPop').classList.remove('open');
+});
+
+$('#btnCustomToggle').addEventListener('click', ()=>{
+  const row=$('#customRow'), open=row.style.display==='none';
+  row.style.display=open?'flex':'none';
+  $('#btnCustomToggle').textContent=open?'自定义 ▴':'自定义 ▾';
+});
+
+function openHint(show){
+  const body=$('#hintBody'), btn=$('#btnHintToggle');
+  const target=(show===undefined)?(body.style.display==='none'):show;
+  body.style.display=target?'block':'none';
+  btn.textContent=(target?'▾':'▸')+' 导出进度 · 解析完整度 · 去重 · 未下载提醒';
+}
+function briefHint(text){ const el=$('#hintBrief'); if(el) el.textContent=text; }
+$('#btnHintToggle').addEventListener('click',()=>openHint());
+$('#btnHintClose').addEventListener('click',()=>openHint(false));
+
+function showCodexPath(folder, existing){
+  S.codexPath=folder;
+  const bar=$('#codexPathBar');
+  if(bar){
+    $('#codexPathText').textContent=folder;
+    const label=$('#codexPathLabel');
+    if(label) label.textContent = existing
+      ? '♻️ 该单子已在实时同步中，已为你刷新原目录：'
+      : '✅ 实时目录已开启（0 导出 / 0 上传）：';
+    bar.style.display='flex';
+  }
+}
+$('#btnCodexPathClose').addEventListener('click',()=>{ $('#codexPathBar').style.display='none'; });
+$('#btnGotoCodex').addEventListener('click', ()=>{
+  switchTab('codex'); codexStatus().catch(e=>setMsg(e.message||String(e),true));
+});
+$('#btnCopyPath').addEventListener('click', async ()=>{
+  const folder=S.codexPath||'';
+  if(!folder){ setMsg('还没有开启实时目录',true); return; }
+  try{ await navigator.clipboard.writeText(folder); }
+  catch(e){
+    const ta=document.createElement('textarea'); ta.value=folder;
+    document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove();
+  }
+  setMsg('目录路径已复制：'+folder);
+});
+$('#btnCopyStart').addEventListener('click', ()=>
+  copyCodexText(fillCodexPrompt(CODEX_START_PROMPT, S.codexPath||''),'开工指令'));
+$('#btnCopyResume').addEventListener('click', ()=>
+  copyCodexText(fillCodexPrompt(CODEX_RESUME_PROMPT, S.codexPath||''),'续改口令'));
+
+loadAll();
+loadExtraDirs();
+</script>
+</body>
+</html>
