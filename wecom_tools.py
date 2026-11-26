@@ -371,7 +371,9 @@ def save_config(cfg):
             ROOT / "decrypt" / "windows" / "export" / f"dec_{acc['id']}")
         for key in ("source", "source_box", "source_root"):
             acc.pop(key, None)
-    CONFIG.write_text(json.dumps(clean, ensure_ascii=False, indent=2), encoding="utf-8")
+    # 原子写：先落 .tmp 再 os.replace，避免转移/同步中途断电留下半截 config.json
+    _atomic_write_text(CONFIG,
+                       json.dumps(clean, ensure_ascii=False, indent=2))
 
 
 def wxwork_root(cfg):
@@ -2236,8 +2238,12 @@ def _universal_fallback(ct, raw):
 def _message_index(cfg, acc, cid):
     """全量清洗后的消息（时间正序），按解密库 + WAL 水印做 LRU 缓存。"""
     db = _dec_message_db(acc, cfg)
+    source = Path(acc["data_dir"]) / "message.db"
+    # 双保险：解密库水印 + 原始库/WAL 水印。原库一变缓存立即失效，
+    # 绝不在解密库尚未更新时拿旧 65 条缓存假装命中。
     stamp = (db.stat().st_mtime_ns, db.stat().st_size,
-             _stat_sig(str(db) + "-wal"))
+             _stat_sig(str(db) + "-wal"),
+             _stat_sig(str(source)), _stat_sig(str(source) + "-wal"))
     key = (acc["id"], str(cid))
     with _MSG_INDEX_LOCK:
         hit = _MSG_INDEX.get(key)
@@ -3126,6 +3132,18 @@ def _atomic_write_text(path, text):
     os.replace(tmp, path)
 
 
+def _atomic_write_if_changed(path, text):
+    """内容完全一致时不重写（避免假同步把 mtime 推新却仍是旧内容）。"""
+    path = Path(path)
+    try:
+        if path.read_text(encoding="utf-8") == text:
+            return False
+    except (OSError, UnicodeError):
+        pass
+    _atomic_write_text(path, text)
+    return True
+
+
 def _new_tmp_export_dir():
     _cleanup_stale_tmp_exports()
     TMP_EXPORT_ROOT.mkdir(parents=True, exist_ok=True)
@@ -3720,8 +3738,20 @@ def precise_export(cfg, acc, cid, name=None, ids=None, zip_mode="timestamp",
     else:
         scope_lines = [f"- conversation-id: `{cid}`",
                        f"- 企微账号: `{acc['id']}`"]
+    # 防串单：活目录头部明确锚定唯一业务基准的客户群，AI 不再把私聊里其它新派单混入
+    main_group = ""
+    if live_dir:
+        if multi:
+            main_group = next(
+                (str(x.get("name") or x.get("cid") or "")
+                 for x in (items or []) if _codex_is_group(x.get("cid"))), "")
+        elif _codex_is_group(cid):
+            main_group = str(name or cid)
+    anchor_lines = ([f"> 主项目群（唯一业务基准）: {main_group}", ""]
+                    if main_group else [])
     chat_lines = [
         f"# {title} · 已选消息（时间正序）", "",
+        *anchor_lines,
         *scope_lines,
         f"- 生成时间: {time.strftime('%Y-%m-%d %H:%M:%S')}",
         f"- 已选消息: {len(picked)} 条（仅当前勾选，不含未勾选消息与其它群文件）",
@@ -3733,6 +3763,7 @@ def precise_export(cfg, acc, cid, name=None, ids=None, zip_mode="timestamp",
     ]
     ai_lines = [
         f"# {title} · 单文件汇总（给 AI）", "",
+        *anchor_lines,
         f"- 会话数 {len(scope)} / 已选消息 {len(picked)} 条，附件按全局时间顺序编号 001、002…",
         *scope_lines,
         "- 只含当前勾选消息与这些消息精准匹配到的附件；Word/PDF/Excel/TXT 正文就地展开。",
@@ -4023,10 +4054,12 @@ def precise_export(cfg, acc, cid, name=None, ids=None, zip_mode="timestamp",
     ai_path = folder / "ALL_FOR_AI.md"
     chat_text = "\n".join(chat_lines)
     ai_text = "\n".join(ai_lines)
+    content_changed = True
     if live_dir:
-        # 活目录：原子写，Codex 永远不会读到半截文件
-        _atomic_write_text(chat_path, chat_text)
-        _atomic_write_text(ai_path, ai_text)
+        # 活目录：原子写 + 内容未变则不重写，杜绝「mtime 推新但内容还是旧快照」
+        content_changed = _atomic_write_if_changed(chat_path, chat_text)
+        if _atomic_write_if_changed(ai_path, ai_text):
+            content_changed = True
     else:
         chat_path.write_text(chat_text, encoding="utf-8")
         ai_path.write_text(ai_text, encoding="utf-8")
@@ -4105,7 +4138,7 @@ def precise_export(cfg, acc, cid, name=None, ids=None, zip_mode="timestamp",
             "messages": len(picked), "attachments_ok": len(attachments),
             "files": attachments, "missing": missing, "quality": quality,
             "deduplicated": dedup_count, "multi": multi,
-            "merged_items": scope,
+            "merged_items": scope, "content_changed": content_changed,
             "all_for_ai": {"size_kb": ai_size_kb, **stats},
             "counts": {"attachments": len(attachments)},
             "recent_messages": [
@@ -4292,6 +4325,17 @@ def sync_live_db(acc, cfg):
         if can_patch:
             from wxwork_crypto import decrypt_page, has_plain_header_fragment
             size_before = dec.stat().st_size
+            peak_before = 0
+            try:
+                probe = connect_readonly(dec, immutable=True)
+                try:
+                    peak_before = int(probe.execute(
+                        "SELECT COALESCE(MAX(message_id),0) FROM message_table"
+                    ).fetchone()[0] or 0)
+                finally:
+                    probe.close()
+            except (OSError, sqlite3.Error, ValueError):
+                peak_before = 0
             old_pages = {}
             try:
                 key = bytes.fromhex(acc["key"])
@@ -4318,7 +4362,15 @@ def sync_live_db(acc, cfg):
                     handle.write(commit_size.to_bytes(4, "big"))
                 connection = connect_readonly(dec, immutable=True)
                 try:
-                    connection.execute("SELECT count(*) FROM message_table").fetchone()
+                    # 轻量校验：补丁后必须仍可读、有消息，且最大 message_id 不倒退
+                    row = connection.execute(
+                        "SELECT COALESCE(MAX(message_id),0), COUNT(*) "
+                        "FROM message_table").fetchone()
+                    if not row or int(row[1] or 0) == 0:
+                        raise ValueError("WAL 补丁后解密库无消息，退回整库重解")
+                    if int(row[0] or 0) < peak_before:
+                        raise ValueError(
+                            "WAL 补丁后最大 message_id 倒退，退回整库重解")
                 finally:
                     connection.close()
             except Exception:
@@ -4337,7 +4389,8 @@ def sync_live_db(acc, cfg):
             with _LIVE_FULL_LOCK:
                 last = _LAST_FULL.get(acc["id"], 0)
                 if now - last < 20:
-                    return True, "pending"
+                    # 不写 state（下一轮会重试），绝不假装「已同步」
+                    return False, "pending"
                 _LAST_FULL[acc["id"]] = now
             refresh(acc, cfg, force=True)  # 项目自带命令整库重解（约 8 秒）
             generation, commit_size, _ = _wal_committed(acc)
@@ -4614,7 +4667,7 @@ def main():
 
 CODEX_DEFAULT_ROOT = Path(r"D:\AI在办项目")
 CODEX_FALLBACK_ROOT = Path.home() / "Documents" / "ChatGPT" / "单子"
-CODEX_INTERVAL_SECONDS = 5
+CODEX_INTERVAL_SECONDS = 3   # 水印检查周期（无变化时只做文件 stat，<5ms）
 _CODEX_LOCK = threading.Lock()
 _CODEX_LAST_TICK = {"at": 0.0, "runs": 0}
 _AI_TARGETS = ("codex", "antigravity")
@@ -4709,6 +4762,139 @@ def codex_since(range_key, start=None, end=None):
         return float(time.mktime((now.tm_year, now.tm_mon, now.tm_mday,
                                  0, 0, 0, 0, 0, -1)))
     return time.time() - days * 86400
+
+
+def _codex_log(message):
+    """把 5 秒同步的异常原因落到独立日志，前端卡片也会显示 last_error。"""
+    try:
+        RUNTIME.mkdir(parents=True, exist_ok=True)
+        with (RUNTIME / "codex_sync.log").open("a", encoding="utf-8") as handle:
+            handle.write(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] {message}\n")
+    except OSError:
+        pass
+
+
+def _dec_db_peak(cfg, acc):
+    """解密库的 (最大 message_id, 消息总数)，用于轻量校验 WAL 补丁是否真的生效。"""
+    db = _dec_message_db(acc, cfg)
+    try:
+        connection = connect_readonly(db, immutable=True)
+        try:
+            row = connection.execute(
+                "SELECT COALESCE(MAX(message_id),0), COUNT(*) "
+                "FROM message_table").fetchone()
+            return (int(row[0] or 0), int(row[1] or 0))
+        finally:
+            connection.close()
+    except (OSError, sqlite3.Error, ValueError):
+        return (0, 0)
+
+
+def _codex_sync_sources(cfg, project):
+    """根治假同步：任何一轮刷新前，先把原库/WAL 的新消息可靠落到解密库。
+
+    返回同步明细；只要有一个账号是 pending / 回退 / 解密失败，就抛异常，
+    调用方绝不推进 signature，5 秒后自动重试。
+    """
+    details = []
+    for aid in project.get("accounts") or []:
+        acc = _find_acc(cfg, aid)
+        if acc is None:
+            raise RuntimeError(f"账号 {aid} 不在配置中，无法更新解密库")
+        before = _dec_db_peak(cfg, acc)
+        changed, method = sync_live_db(acc, cfg)
+        if method == "pending":
+            raise RuntimeError(
+                f"账号 {aid} 整库重解被节流跳过，解密库尚未更新；本轮不推进水印，5 秒后重试")
+        after = _dec_db_peak(cfg, acc)
+        if after[1] == 0:
+            raise RuntimeError(f"账号 {aid} 解密库为空或不可读，本轮中止")
+        if after[0] < before[0]:
+            raise RuntimeError(
+                f"账号 {aid} 解密库最大 message_id 倒退 {before[0]}→{after[0]}，本轮中止")
+        # WAL 补丁/整库重解成功后强制失效该账号的消息索引缓存
+        with _MSG_INDEX_LOCK:
+            for key in [k for k in _MSG_INDEX if k[0] == str(aid)]:
+                _MSG_INDEX.pop(key, None)
+        details.append({"account": aid, "method": method,
+                        "before": list(before), "after": list(after)})
+    return details
+
+
+def _codex_conv_peak(cfg, acc, cid, cap=None):
+    """一条轻量 SQL：某会话当前 (MAX(message_id), COUNT(*))；锁定私聊按水位截断。"""
+    db = _dec_message_db(acc, cfg)
+    sql = ("SELECT COALESCE(MAX(CAST(message_id AS INTEGER)),0), COUNT(*) "
+           "FROM message_table WHERE conversation_id=?")
+    args = [str(cid)]
+    if cap is not None:
+        sql += " AND CAST(message_id AS INTEGER) <= ?"
+        args.append(int(cap))
+    try:
+        connection = connect_readonly(db, immutable=True)
+        try:
+            row = connection.execute(sql, args).fetchone()
+            return [int(row[0] or 0), int(row[1] or 0)]
+        finally:
+            connection.close()
+    except (OSError, sqlite3.Error, ValueError):
+        return None
+
+
+def _codex_project_fingerprint(cfg, project):
+    """项目所有会话的轻量指纹 {cid: [max_id, count]}，用于毫秒级跳过无新增项目。"""
+    fingerprint = {}
+    for entry in _codex_scope_entries(project.get("scope")):
+        acc = _find_acc(cfg, entry.get("account"))
+        if acc is None:
+            continue
+        cid = str(entry.get("cid") or "")
+        cap = (_mid_num(entry.get("locked_max_id"))
+               if entry.get("locked") else None)
+        peak = _codex_conv_peak(cfg, acc, cid, cap)
+        if peak is not None:
+            fingerprint[cid] = peak
+    return fingerprint
+
+
+def codex_quick_sync(project_id):
+    """「复制口令」前的单项目极速同步：只同步这一个项目、只重算它的活目录。"""
+    with _CODEX_LOCK:
+        cfg = load_config()
+        project = next((p for p in cfg.get("codex_projects") or []
+                        if p["id"] == project_id), None)
+        if project is None:
+            raise RuntimeError(f"找不到在办项目 {project_id}")
+        try:
+            details = _codex_sync_sources(cfg, project)
+        except RuntimeError as exc:
+            # 与后台 3 秒心跳撞上整库重解节流：短暂等待后重试一次
+            if "节流" not in str(exc) and "pending" not in str(exc).lower():
+                raise
+            time.sleep(2)
+            details = _codex_sync_sources(cfg, project)
+        result = build_live_folder(cfg, project)
+        project["signature"] = codex_signature(cfg, project)
+        project["conv_fingerprint"] = _codex_project_fingerprint(cfg, project)
+        project["last_update"] = time.strftime("%Y-%m-%d %H:%M:%S")
+        project["last_error"] = ""
+        project["sync_pending"] = False
+        project["last_sync_method"] = ",".join(d["method"] for d in details)
+        project["stats"] = _codex_stats(result)
+        save_config(cfg)
+        recent = result.get("recent_messages") or []
+        files = result.get("files") or []
+        latest_time = recent[-1].get("time", "") if recent else ""
+        latest_attach_no = (str(files[-1].get("number") or "")
+                            if files else "") or "无"
+        return {"synced": True,
+                "latest": latest_time,
+                "latest_time": latest_time,
+                "latest_attach_no": latest_attach_no,
+                "messages": result.get("messages"),
+                "attachments": result.get("attachments_ok"),
+                "content_changed": result.get("content_changed"),
+                "project": dict(project)}
 
 
 def codex_signature(cfg, project):
@@ -4811,8 +4997,10 @@ def _write_live_changes(project, result, folder):
         added_attachments = max(0, total_attachments - prev_attachments)
 
     change_path = Path(folder) / "000_最新变化.md"
-    # 无新增消息时不覆盖：保留上一轮真正的变化清单，用户点「立即刷新」不会把它清空
-    if not first_time and not added and change_path.is_file():
+    content_changed = bool(result.get("content_changed", True))
+    # 无新增消息且活目录内容也没变 → 一个字都不写，杜绝「假刷新」把 mtime 推新
+    if (not first_time and not added and not content_changed
+            and change_path.is_file()):
         return
 
     out = [
@@ -4833,15 +5021,55 @@ def _write_live_changes(project, result, folder):
         out += ["---", ""]
     if not added:
         out += ["（本轮无新增消息）", ""]
-    _atomic_write_text(change_path, "\n".join(out))
+    _atomic_write_if_changed(change_path, "\n".join(out))
 
     project["message_ids"] = [m["id"] for m in recent]
     project["attachments_count"] = total_attachments
-    project["last_write"] = now
+    if first_time or added:
+        project["last_write"] = now          # 只在真的有消息变化时推进
     project["last_write_stats"] = {"messages": total_messages,
                                    "attachments": total_attachments}
     project["last_added"] = {"messages": len(added),
                              "attachments": added_attachments}
+
+
+def _codex_refresh_meta(project, result):
+    """每次同步/刷新提取最新有效消息的人话摘要与时间戳，写进项目配置（纯内存）。"""
+    recent = result.get("recent_messages") or []
+    picked = None
+    for msg in reversed(recent):
+        content = str(msg.get("content") or "").strip()
+        if content or msg.get("attachments"):
+            picked = msg
+            break
+    if picked is None:
+        return
+    raw_time = str(picked.get("time") or "")
+    match = re.search(r"(\d{2}:\d{2})", raw_time)
+    hhmm = match.group(1) if match else (raw_time or "—")
+    sender = str(picked.get("sender") or "").strip() or "—"
+    body = " ".join(str(picked.get("content") or "").split())[:48]
+    has_attach = bool(picked.get("attachments"))
+    if not body:
+        body = "[图片/附件]" if has_attach else "[消息]"
+    project["latest_preview"] = (
+        f"[{hhmm} {sender}]：{body}" + (" [图]" if has_attach else ""))
+    stamp = 0.0
+    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M"):
+        try:
+            stamp = float(time.mktime(time.strptime(raw_time, fmt)))
+            break
+        except (ValueError, TypeError):
+            continue
+    project["latest_msg_ts"] = stamp or time.time()
+    # 存量项目首次迁移：把已发基线初始化为当前消息数，避免升级后满屏红点
+    if "last_sent_count" not in project:
+        project["last_sent_count"] = int(
+            result.get("messages") or len(recent))
+    project.setdefault("alias_note", "")
+    project.setdefault("latest_preview", "")
+    project.setdefault("latest_msg_ts", 0)
+    project.setdefault("last_sent_at", "")
 
 
 def build_live_folder(cfg, project, progress=None):
@@ -4851,9 +5079,12 @@ def build_live_folder(cfg, project, progress=None):
     固定，新消息自然追加到后面、新附件接着往后编号。每次同步后写 000_最新变化.md。
     """
     scope = project.get("scope") or {}
+    _codex_prepare_locks(cfg, project)
     since = float(project.get("since_ts") or 0)
     folder = Path(project["folder"])
     folder.mkdir(parents=True, exist_ok=True)
+    # 干净交付隔离区：只创建、绝不清空；成品只放这里，AI 记录与脚本全留根目录
+    (folder / "交付给客户").mkdir(exist_ok=True)
     if scope.get("items"):
         built = []
         for entry in scope["items"]:
@@ -4862,6 +5093,10 @@ def build_live_folder(cfg, project, progress=None):
                 raise RuntimeError(f"账号 {entry['account']} 不在配置中")
             picked = [m["id"] for m in _message_index(cfg, acc, entry["cid"])
                       if (m.get("ts") or 0) >= since]
+            # 防串单：锁定的客服私聊只取到锁定水位，之后新派的其他单子绝不混入
+            if entry.get("locked"):
+                cap = _mid_num(entry.get("locked_max_id"))
+                picked = [mid for mid in picked if _mid_num(mid) <= cap]
             built.append({"account": entry["account"], "cid": entry["cid"],
                           "name": entry.get("name") or entry["cid"], "ids": picked})
         active = [x for x in built if x["ids"]]
@@ -4883,12 +5118,16 @@ def build_live_folder(cfg, project, progress=None):
             raise RuntimeError("项目缺少会话配置（account / cid）")
         picked = [m["id"] for m in _message_index(cfg, acc, scope["cid"])
                   if (m.get("ts") or 0) >= since]
+        if scope.get("locked"):
+            cap = _mid_num(scope.get("locked_max_id"))
+            picked = [mid for mid in picked if _mid_num(mid) <= cap]
         if not picked:
             raise RuntimeError("起始时间之后没有任何消息，请放宽范围")
         result = precise_export(cfg, acc, scope["cid"], name=project["name"],
                                 ids=picked, live_dir=str(folder), since_ts=since,
                                 progress=progress)
     _write_live_changes(project, result, folder)
+    _codex_refresh_meta(project, result)
     return result
 
 
@@ -4916,13 +5155,52 @@ def _root_health(root):
             "writable": writable, "projects": projects}
 
 
+_ROOT_HEALTH_CACHE = {"at": 0.0, "value": None}
+
+
+def _root_health_cached(cfg):
+    """根目录健康状态缓存 30 秒：前端每 3 秒轮询不必反复创建探针文件。"""
+    now = time.monotonic()
+    cached = _ROOT_HEALTH_CACHE["value"]
+    if cached and now - _ROOT_HEALTH_CACHE["at"] < 30:
+        return cached
+    value = {t: _root_health(codex_root(cfg, t)) for t in _AI_TARGETS}
+    _ROOT_HEALTH_CACHE.update({"at": now, "value": value})
+    return value
+
+
 def codex_status():
-    with _CODEX_LOCK:
+    # 只读状态接口：绝不排 _CODEX_LOCK 的队，后台整库重解时前端仍秒回
+    with contextlib.nullcontext():
         cfg = load_config()
         if _codex_ensure_config(cfg):
             save_config(cfg)
         projects = cfg.get("codex_projects") or []
-        health = {t: _root_health(codex_root(cfg, t)) for t in _AI_TARGETS}
+        # 惰性补防串单锁定字段，让卡片即使水印没变化也能显示锁定状态
+        migrated = False
+        for project in projects:
+            if (project.get("status") == "running"
+                    and _codex_prepare_locks(cfg, project)):
+                migrated = True
+            # 标签与物理路径不一致时自动纠正（只改标签，不动文件）
+            if (project.get("status") == "running"
+                    and _codex_validate_target_path(cfg, project)):
+                migrated = True
+            # 卡片升级首次迁移：已发基线初始化为当前消息数，避免满屏红点
+            if project.get("status") == "running":
+                if "last_sent_count" not in project:
+                    project["last_sent_count"] = int(
+                        (project.get("stats") or {}).get("messages") or 0)
+                    migrated = True
+                for meta_key, meta_default in (
+                        ("alias_note", ""), ("latest_preview", ""),
+                        ("latest_msg_ts", 0), ("last_sent_at", "")):
+                    if meta_key not in project:
+                        project[meta_key] = meta_default
+                        migrated = True
+        if migrated:
+            save_config(cfg)
+        health = _root_health_cached(cfg)
         default = health["codex"]
         return {"root": default["root"],
                 "root_exists": default["exists"],
@@ -4956,12 +5234,119 @@ def codex_set_root(root, target="codex"):
             "live_roots": {t: str(codex_root(cfg, t)) for t in _AI_TARGETS}}
 
 
-def _codex_scope_key(scope):
-    """把项目作用域归一化成忽略顺序的 (account, cid) 集合，用于防重复判定。"""
+def _codex_is_dm(cid):
+    return str(cid or "").startswith("S:")
+
+
+def _codex_is_group(cid):
+    return str(cid or "").startswith("R:")
+
+
+def _mid_num(mid):
+    try:
+        return int(str(mid))
+    except (ValueError, TypeError):
+        return 0
+
+
+def _codex_scope_entries(scope):
+    """兼容单会话 dict 与多会话 items，返回可写的条目引用列表。"""
     scope = scope or {}
-    entries = scope.get("items") or ([scope] if scope.get("cid") else [])
-    return tuple(sorted({(str(x.get("account") or ""), str(x.get("cid") or ""))
-                         for x in entries if x.get("account") and x.get("cid")}))
+    if scope.get("items"):
+        return list(scope["items"])
+    if scope.get("cid"):
+        return [scope]
+    return []
+
+
+def _codex_latest_mid(cfg, account, cid):
+    acc = _find_acc(cfg, account)
+    if acc is None:
+        return 0
+    try:
+        return max((_mid_num(m["id"])
+                    for m in _message_index(cfg, acc, str(cid))), default=0)
+    except (OSError, ValueError, KeyError):
+        return 0
+
+
+def _codex_prepare_locks(cfg, project):
+    """惰性迁移防串单锁定字段（只补字段，绝不改 folder/status/cid/name/account）。
+
+    - `S:` 客服私聊 → locked=True，水位 = 开启瞬间最大 message_id，绝不自动追新
+    - `R:` 客户群   → locked=False，持续 5 秒增量
+    """
+    entries = _codex_scope_entries(project.get("scope"))
+    if not entries:
+        return False
+    changed = False
+    for entry in entries:
+        cid = str(entry.get("cid") or "")
+        if "locked" not in entry:
+            entry["locked"] = _codex_is_dm(cid)
+            changed = True
+        if "locked_max_id" not in entry:
+            entry["locked_max_id"] = _codex_latest_mid(
+                cfg, entry.get("account"), cid)
+            changed = True
+    dm = [e for e in entries if _codex_is_dm(e.get("cid"))]
+    groups = [e for e in entries if _codex_is_group(e.get("cid"))]
+    meta = {
+        "dm_locked": any(bool(e.get("locked")) for e in dm),
+        "has_dm": bool(dm), "has_group": bool(groups),
+        "dm_locked_count": sum(1 for e in dm if e.get("locked")),
+        "main_group": (str(groups[0].get("name") or groups[0].get("cid"))
+                       if groups else ""),
+    }
+    for key, value in meta.items():
+        if project.get(key) != value:
+            project[key] = value
+            changed = True
+    return changed
+
+
+def _codex_target_of_folder(cfg, folder):
+    """根据物理目录所在的根，反推它属于哪个软件（只认根目录，不认标签）。"""
+    try:
+        parent = Path(folder).resolve().parent
+    except OSError:
+        return None
+    for target in _AI_TARGETS:
+        try:
+            if parent == codex_root(cfg, target).resolve():
+                return target
+        except OSError:
+            continue
+    return None
+
+
+def _codex_validate_target_path(cfg, project):
+    """强制 target 与物理根目录一致；只修标签，绝不移动任何文件。"""
+    actual = _codex_target_of_folder(cfg, project.get("folder"))
+    if actual and _normalize_target(project.get("target")) != actual:
+        project["target"] = actual
+        project["target_fixed_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
+        return True
+    return False
+
+
+def _codex_scope_key(scope):
+    """防串单唯一业务主键：严格按 `R:` 客户群；纯 `S:` 单聊（无群）才用私聊。
+
+    共用同一个客服私聊的不同客户群各自独立，绝不能互相拦截；
+    同一个客户群即便换/加了不同客服私聊，也只算同一个项目。
+    """
+    entries = _codex_scope_entries(scope)
+    pairs = lambda pred: tuple(sorted({
+        (str(e.get("account") or ""), str(e.get("cid") or ""))
+        for e in entries if pred(e.get("cid"))}))
+    groups = pairs(_codex_is_group)
+    if groups:
+        return groups
+    dms = pairs(_codex_is_dm)
+    if dms:
+        return dms
+    return pairs(lambda c: True)
 
 
 def codex_start(spec):
@@ -5018,8 +5403,11 @@ def codex_start(spec):
         if raw_name:
             name = safe_name(raw_name)[:40]
         else:
+            # 合并模式留空时，默认目录名必须优先取 R: 客户群名，绝不取 S: 客服私聊名
+            group_name = next((str(e.get("name") or "") for e in entries
+                               if _codex_is_group(e.get("cid"))), "")
             name = safe_name(_short_export_label(
-                spec.get("default_name") or "AI在办"))[:12]
+                group_name or spec.get("default_name") or "AI在办"))[:12]
         folder = root / name
         if any(str(p.get("folder", "")).casefold() == str(folder).casefold()
                and p.get("status") == "running" for p in projects):
@@ -5037,6 +5425,7 @@ def codex_start(spec):
                 time.strftime("%Y-%m-%d %H:%M:%S"),
             "last_update": "", "last_error": "", "stats": {},
         }
+        _codex_prepare_locks(cfg, project)
         result = build_live_folder(cfg, project)
         project["signature"] = codex_signature(cfg, project)
         project["last_update"] = time.strftime("%Y-%m-%d %H:%M:%S")
@@ -5048,6 +5437,38 @@ def codex_start(spec):
                     "messages": result.get("messages"),
                     "attachments_ok": result.get("attachments_ok"),
                     "folder": str(folder)}}
+
+
+def codex_rename_note(project_id, alias_note):
+    """只改界面显示名；绝不改动 folder / name / target，避免打断已绑定的物理路径。"""
+    with _CODEX_LOCK:
+        cfg = load_config()
+        project = next((p for p in cfg.get("codex_projects") or []
+                        if p["id"] == project_id), None)
+        if project is None:
+            raise RuntimeError(f"找不到在办项目 {project_id}")
+        original_folder = str(project.get("folder", ""))
+        project["alias_note"] = str(alias_note or "").strip()[:40]
+        project["folder"] = original_folder
+        save_config(cfg)
+        return {"project": dict(project),
+                "folder_unchanged": str(project["folder"]) == original_folder}
+
+
+def codex_mark_sent(project_id, count=None):
+    """复制口令完成前置秒刷后清零红点：把已发基线更新为刚同步的最新条数。"""
+    with _CODEX_LOCK:
+        cfg = load_config()
+        project = next((p for p in cfg.get("codex_projects") or []
+                        if p["id"] == project_id), None)
+        if project is None:
+            raise RuntimeError(f"找不到在办项目 {project_id}")
+        value = (int(count) if count is not None else
+                 int((project.get("stats") or {}).get("messages") or 0))
+        project["last_sent_count"] = value
+        project["last_sent_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
+        save_config(cfg)
+        return {"project": dict(project), "last_sent_count": value}
 
 
 def codex_refresh(project_id):
@@ -5064,6 +5485,169 @@ def codex_refresh(project_id):
             save_config(cfg)
             return dict(project)
     raise RuntimeError(f"找不到在办项目 {project_id}")
+
+
+def codex_pull_dm(project_id):
+    """手动补拉客服私聊新消息：把锁定水位更新到最新并刷新活目录 + 变化清单。"""
+    with _CODEX_LOCK:
+        cfg = load_config()
+        for project in cfg.get("codex_projects", []):
+            if project["id"] != project_id:
+                continue
+            pulled = []
+            for entry in _codex_scope_entries(project.get("scope")):
+                if not _codex_is_dm(entry.get("cid")):
+                    continue
+                cid = str(entry.get("cid"))
+                old = _mid_num(entry.get("locked_max_id"))
+                acc = _find_acc(cfg, entry.get("account"))
+                msgs = _message_index(cfg, acc, cid) if acc else []
+                latest = max((_mid_num(m["id"]) for m in msgs), default=old)
+                entry["locked_max_id"] = latest
+                entry["locked"] = True
+                entry["last_pull"] = time.strftime("%Y-%m-%d %H:%M:%S")
+                pulled.append({
+                    "cid": cid, "from": old, "to": latest,
+                    "new_messages": sum(1 for m in msgs
+                                        if old < _mid_num(m["id"]) <= latest)})
+            _codex_prepare_locks(cfg, project)
+            result = build_live_folder(cfg, project)
+            project["signature"] = codex_signature(cfg, project)
+            project["last_update"] = time.strftime("%Y-%m-%d %H:%M:%S")
+            project["last_error"] = ""
+            project["stats"] = _codex_stats(result)
+            save_config(cfg)
+            return {"pulled": pulled, "messages": result.get("messages"),
+                    "project": dict(project)}
+        raise RuntimeError(f"找不到在办项目 {project_id}")
+
+
+def codex_toggle_lock(project_id, cid=None, locked=None):
+    """切换客服私聊锁定；重新锁定时把水位刷新到当前最新，避免历史全量涌入。"""
+    with _CODEX_LOCK:
+        cfg = load_config()
+        for project in cfg.get("codex_projects", []):
+            if project["id"] != project_id:
+                continue
+            toggled = []
+            for entry in _codex_scope_entries(project.get("scope")):
+                if not _codex_is_dm(entry.get("cid")):
+                    continue
+                if cid and str(entry.get("cid")) != str(cid):
+                    continue
+                state = ((not bool(entry.get("locked")))
+                         if locked is None else bool(locked))
+                entry["locked"] = state
+                if state:
+                    entry["locked_max_id"] = _codex_latest_mid(
+                        cfg, entry.get("account"), str(entry.get("cid")))
+                toggled.append({"cid": str(entry.get("cid")), "locked": state})
+            if not toggled:
+                raise RuntimeError("该项目没有可切换的客服私聊会话")
+            _codex_prepare_locks(cfg, project)
+            result = build_live_folder(cfg, project)
+            project["signature"] = codex_signature(cfg, project)
+            project["last_update"] = time.strftime("%Y-%m-%d %H:%M:%S")
+            project["last_error"] = ""
+            project["stats"] = _codex_stats(result)
+            save_config(cfg)
+            return {"toggled": toggled, "project": dict(project)}
+        raise RuntimeError(f"找不到在办项目 {project_id}")
+
+
+_CODEX_TRANSFER_PAUSE = set()   # 转移期间只暂停这一个项目，其它项目照常 3 秒同步
+_CODEX_PENDING_COOLDOWN = {}    # aid -> monotonic 到期时间（整库重解节流冷却）
+_CODEX_LAST_ACCOUNT_SIG = {}    # aid -> 上轮原始库水印，用于「一有新变化立刻解除冷却」
+
+
+def codex_transfer(project_id, target):
+    """Codex ↔ 反重力 原子无损转移：整个项目文件夹同盘整体移动。
+
+    顺序：目标根校验 → 只暂停本项目 → 重名安全后缀 → 同盘 os.rename（原子）→
+    原子更新 config（只改 target/root/folder/name，保留 scope/locked/since 等）→
+    立即刷新活目录 → 恢复心跳。任何失败都不删原目录；占用时原样回滚。
+    """
+    key = _normalize_target(target)
+    with _CODEX_LOCK:
+        cfg = load_config()
+        project = next((p for p in cfg.get("codex_projects") or []
+                        if p["id"] == project_id), None)
+        if project is None:
+            raise RuntimeError(f"找不到在办项目 {project_id}")
+        current = _normalize_target(project.get("target"))
+        if current == key:
+            return {"already_there": True, "project": dict(project)}
+
+        # a) 目标根目录存在且可写
+        dest_root = codex_root(cfg, key)
+        if not dest_root.is_dir():
+            raise RuntimeError(f"目标根目录不存在：{dest_root}")
+        if not _root_health(dest_root)["writable"]:
+            raise RuntimeError(f"目标根目录不可写：{dest_root}")
+
+        src = Path(project["folder"])
+        if not src.is_dir():
+            raise RuntimeError(f"原项目目录不存在：{src}")
+        if (os.path.splitdrive(str(src))[0].lower()
+                != os.path.splitdrive(str(dest_root))[0].lower()):
+            raise RuntimeError("源目录与目标根目录不在同一磁盘，无法整体移动，已中止")
+
+        # c) 重名绝不覆盖：自动加 _2 / _3… 安全后缀
+        dest = dest_root / src.name
+        if dest.exists():
+            index = 2
+            while (dest_root / f"{src.name}_{index}").exists():
+                index += 1
+            dest = dest_root / f"{src.name}_{index}"
+        suffix_note = (f"目标根目录已有同名文件夹，已自动改用安全名称 {dest.name}"
+                       if dest.name != src.name else "")
+
+        old_folder = str(project["folder"])
+        # b) 只暂停本项目同步
+        _CODEX_TRANSFER_PAUSE.add(project_id)
+        try:
+            # d) 同盘整体移动。os.rename 要么全成、要么全败，不存在「只搬一半」
+            try:
+                os.rename(str(src), str(dest))
+            except OSError as exc:
+                winerr = getattr(exc, "winerror", None)
+                if isinstance(exc, PermissionError) or winerr in (5, 32):
+                    raise RuntimeError(
+                        "目录正被占用，请先关闭该文件夹窗口或正在读写它的软件后重试")
+                raise RuntimeError(f"目录移动失败，原目录已原样保留：{exc}")
+
+            # e) 原子更新 config（save_config 已是 .tmp + os.replace）
+            project["folder"] = str(dest)
+            project["root"] = str(dest_root)
+            project["target"] = key
+            project["name"] = dest.name
+            project["signature"] = {}      # 强制下一次心跳立即刷新
+            try:
+                save_config(cfg)
+            except Exception:
+                os.rename(str(dest), str(src))   # 完整回滚，绝不留下半截状态
+                project["folder"] = old_folder
+                project["target"] = current
+                project["name"] = src.name
+                raise RuntimeError("配置写入失败，目录已原样移回，未改动任何文件")
+
+            # f) 立即刷新活目录（含 交付给客户/、000_最新变化.md、开工/续改路径）
+            try:
+                result = build_live_folder(cfg, project)
+                project["signature"] = codex_signature(cfg, project)
+                project["last_update"] = time.strftime("%Y-%m-%d %H:%M:%S")
+                project["last_error"] = ""
+                project["stats"] = _codex_stats(result)
+            except Exception as exc:
+                project["last_error"] = f"转移后刷新失败：{exc}"
+            save_config(cfg)
+        finally:
+            _CODEX_TRANSFER_PAUSE.discard(project_id)
+
+        return {"transferred": True, "already_there": False,
+                "from": old_folder, "to": str(dest), "target": key,
+                "target_label": _AI_TARGET_LABEL[key],
+                "suffix_note": suffix_note, "project": dict(project)}
 
 
 def codex_stop(project_id):
@@ -5111,38 +5695,128 @@ def codex_open(project_id):
 
 
 def codex_tick():
-    """后台每 5 秒跑一次：只做文件 stat 水印比对，几乎零资源占用。"""
+    """后台每 3 秒：按账号聚合水印，只对会话指纹真变化的项目重导活目录。
+
+    - 每个账号只执行一次 sync_live_db（原库/WAL → 解密库）
+    - 每个会话一条轻量 SQL (MAX(message_id), COUNT(*))
+    - 指纹没变的项目毫秒跳过，绝不陪跑重导
+    - 同步失败的项目标 sync_pending，下一轮自动补跑
+    """
     _CODEX_LAST_TICK["at"] = time.time()
     _CODEX_LAST_TICK["runs"] += 1
     with _CODEX_LOCK:
         cfg = load_config()
-        projects = cfg.get("codex_projects") or []
+        projects = [p for p in (cfg.get("codex_projects") or [])
+                    if p.get("status") == "running"
+                    and p["id"] not in _CODEX_TRANSFER_PAUSE]
         if not projects:
-            return {"checked": 0, "refreshed": 0}
-        changed = False
-        refreshed = []
-        checked = 0
-        for project in projects:
-            if project.get("status") != "running":
+            return {"checked": 0, "refreshed": [], "skipped": [], "accounts": {}}
+
+        # ① 每个账号只读一次原始库 / WAL 水印
+        account_sigs = {}
+        for aid in sorted({a for p in projects for a in (p.get("accounts") or [])}):
+            acc = _find_acc(cfg, aid)
+            if acc is None:
                 continue
-            checked += 1
             try:
-                current = codex_signature(cfg, project)
-                if current == project.get("signature"):
-                    continue
+                sig = live_signature(acc)
+                account_sigs[aid] = [list(sig["main"]), list(sig["wal"])]
+            except (OSError, ValueError, KeyError):
+                continue
+
+        # ② 需要同步解密库的账号（水印变化 或 有待重试项目）
+        needs_sync = set()
+        for aid, sig in account_sigs.items():
+            # 原库又有新变化 → 立刻解除冷却，保证保鲜不受影响
+            if sig != _CODEX_LAST_ACCOUNT_SIG.get(aid):
+                _CODEX_PENDING_COOLDOWN.pop(aid, None)
+                _CODEX_LAST_ACCOUNT_SIG[aid] = sig
+            if time.monotonic() < _CODEX_PENDING_COOLDOWN.get(aid, 0):
+                continue       # 整库重解节流冷却中，本轮不重复尝试
+            related = [p for p in projects if aid in (p.get("accounts") or [])]
+            if any((p.get("signature") or {}).get(aid) != sig
+                   or p.get("sync_pending") for p in related):
+                needs_sync.add(aid)
+
+        # ③ 每个账号只跑一次 sync_live_db，并强失效该账号的消息索引缓存
+        sync_result = {}
+        for aid in sorted(needs_sync):
+            acc = _find_acc(cfg, aid)
+            if acc is None:
+                sync_result[aid] = {"ok": False, "reason": "账号不在配置中"}
+                continue
+            try:
+                before = _dec_db_peak(cfg, acc)
+                _, method = sync_live_db(acc, cfg)
+                if method == "pending":
+                    _CODEX_PENDING_COOLDOWN[aid] = time.monotonic() + 20
+                    raise RuntimeError("整库重解被节流跳过，下轮自动补跑")
+                after = _dec_db_peak(cfg, acc)
+                if after[1] == 0:
+                    raise RuntimeError("解密库为空或不可读")
+                if after[0] < before[0]:
+                    raise RuntimeError(
+                        f"解密库峰值倒退 {before[0]}→{after[0]}")
+                with _MSG_INDEX_LOCK:
+                    for key in [k for k in _MSG_INDEX if k[0] == str(aid)]:
+                        _MSG_INDEX.pop(key, None)
+                sync_result[aid] = {"ok": True, "method": method,
+                                    "peak": list(after)}
+            except Exception as exc:
+                sync_result[aid] = {"ok": False, "reason": str(exc)}
+                _codex_log(f"账号 {aid} 解密库同步失败：{exc}（下轮自动补跑）")
+
+        changed = False
+        refreshed, skipped = [], []
+        for project in projects:
+            aids = [a for a in (project.get("accounts") or [])
+                    if a in account_sigs]
+            # 同步失败 → 标黄待重试，绝不推进签名
+            failed = [a for a in aids
+                      if a in sync_result and not sync_result[a]["ok"]]
+            if failed:
+                project["sync_pending"] = True
+                project["last_error"] = ("上次同步待重试：" +
+                                        sync_result[failed[0]]["reason"])
+                changed = True
+                continue
+            stale_sig = any(
+                (project.get("signature") or {}).get(a) != account_sigs[a]
+                for a in aids)
+            if not project.get("sync_pending") and not stale_sig:
+                skipped.append(project["id"])          # 毫秒级跳过
+                continue
+            # ④ 每个会话一条轻量 SQL；指纹没变就不重导
+            fingerprint = _codex_project_fingerprint(cfg, project)
+            if (fingerprint == project.get("conv_fingerprint")
+                    and not project.get("sync_pending")):
+                project["signature"] = {a: account_sigs[a] for a in aids}
+                skipped.append(project["id"])
+                changed = True
+                continue
+            try:
                 result = build_live_folder(cfg, project)
-                project["signature"] = current
+                project["signature"] = {a: account_sigs[a] for a in aids}
+                project["conv_fingerprint"] = fingerprint
                 project["last_update"] = time.strftime("%Y-%m-%d %H:%M:%S")
                 project["last_error"] = ""
+                project["sync_pending"] = False
+                project["last_sync_method"] = ",".join(
+                    sync_result[a]["method"] for a in aids
+                    if a in sync_result) or "unchanged"
                 project["stats"] = _codex_stats(result)
                 refreshed.append(project["id"])
                 changed = True
             except Exception as exc:
-                project["last_error"] = str(exc)
+                project["sync_pending"] = True
+                project["last_error"] = f"上次同步待重试：{exc}"
+                _codex_log(f"{project.get('name')} 重导失败：{exc}"
+                           "（下轮自动补跑）")
                 changed = True
         if changed:
             save_config(cfg)
-        return {"checked": checked, "refreshed": refreshed}
+        return {"checked": len(projects), "refreshed": refreshed,
+                "skipped": skipped, "accounts": sync_result}
 
 
 if __name__ == "__main__":

@@ -3,6 +3,9 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate, max-age=0">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
 <title>企微 AI 导出工具</title>
 <style>
 :root{
@@ -287,6 +290,23 @@ body{display:flex;flex-direction:column}
 .cap.on{background:var(--primary);border-color:var(--primary);color:#fff;font-weight:600}
 .conflictbar{display:flex;align-items:center;gap:8px;padding:6px 9px;border-radius:8px;
   background:#fffbeb;border:1px solid #fcd34d;color:#92400e;font-size:12px;flex-wrap:wrap}
+.locktag{display:inline-flex;align-items:center;margin:5px 0 0;padding:2px 9px;
+  border-radius:999px;background:#fef3c7;border:1px solid #fcd34d;
+  color:#92400e;font-size:11px;font-weight:600}
+.note-title{font-size:14px;font-weight:700;color:#1d4ed8}
+.note-title .orig{font-weight:400;color:#64748b;font-size:11px}
+.editnote{border:0;background:transparent;cursor:pointer;font-size:11px;
+  padding:1px 4px;color:#475569}
+.editnote:hover{color:#1d4ed8}
+.previewline{margin-top:5px;font-size:11.5px;color:#475569;background:#fff;
+  border:1px solid #e2e8f0;border-radius:6px;padding:3px 8px;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:640px}
+.unsentbadge{display:inline-flex;align-items:center;padding:2px 9px;
+  border-radius:999px;background:#dc2626;color:#fff;font-size:11px;
+  font-weight:700;flex:none}
+.card-unsent{border:1px solid #f97316 !important;box-shadow:0 0 0 2px #ffedd5}
+.codesearch{padding:5px 11px;border:1px solid var(--border);border-radius:999px;
+  font-size:12px;min-width:230px;font-family:inherit;margin-left:6px}
 </style>
 </head>
 <body>
@@ -406,6 +426,7 @@ body{display:flex;flex-direction:column}
         <div class="conflictbar" id="conflictBar" style="display:none">
           <span id="conflictText"></span>
           <button class="fbtn" id="btnGotoOriginal">切到原项目</button>
+          <button class="fbtn" id="btnTransferHere">转移到当前软件</button>
           <button class="fbtn" id="btnConflictClose" title="关闭">×</button>
         </div>
       </footer>
@@ -440,6 +461,8 @@ body{display:flex;flex-direction:column}
           <button class="cap on" data-filter="all">全部</button>
           <button class="cap" data-filter="codex">Codex</button>
           <button class="cap" data-filter="antigravity">反重力</button>
+          <input type="search" class="codesearch" id="codexSearch"
+                 placeholder="搜索备注 / 群名 / 目录 / 最新消息">
         </div>
         <div id="codexList" class="codexgrid"></div>
       </div>
@@ -506,7 +529,7 @@ const S = { groups:[], watched:[], selected:null, syncEnabled:false, lastOutDir:
             lastId:'', liveBusy:false, liveAt:'', searchTimer:null, loadSeq:0,
             exportGroups:new Map(), msgSelByGroup:new Map(), groupInfo:new Map(),
             liveTarget:readLiveTarget(), liveFilter:'all', lastCodexStatus:null,
-            conflictProject:null };
+            codexSearch:'', conflictProject:null };
 let msgTimer = null;
 
 function readLiveTarget(){
@@ -680,6 +703,12 @@ const CODEX_START_PROMPT = `【开工指令模板开始】
 - 000_chat.md 是按时间正序导出的完整聊天记录（含合并转发、引用回复、语音转文字，可能合并了客服私聊与客户群）；
 - 001/002… 是与文中 [附件 00X] / [同附件 00X] 一一对应的参考图、文档、模型或语音。如有任何图片/附件读不到或打不开，先直接告诉我具体编号，严禁硬猜。
 精读规则：分清客户、客服转述与我的发言，以客户最新时间线亲口确认为准，自动作废旧要求；重点识别图片上的红圈、红框、问号、文字标注及 > 引用 [附件 00X] 指向的原图，严格区分「正面参考」与「被否定的反例」，读懂客户真实使用场景与深层痛点。
+防串台约束：若记录中出现客服私聊转发的与当前主群项目明显无关的其他新派单，一律自动忽略，严禁混入当前项目。
+真实设计师交付红线（逐条遵守）：
+① 文件隔离：所有发给客户的成品只能放进 交付给客户/ 目录，严禁混入 .md 聊天记录、.py/.scad 脚本、调试截图、日志或分析报告；根目录的 000_chat.md、ALL_FOR_AI.md、000_最新变化.md 与草稿一律不得外发。
+② 命名去机器味：成品文件名用常规中文/行业工程命名（如 产品名_分件版_1125.stl），严禁出现 AI、Codex、GPT、Antigravity、auto、fixed、v1_final_ai、README、summary 等字样。
+③ 清洗元数据与文件头：生成 3D 文件（OBJ/STL/3MF/STEP/FBX）、Office 文档、PDF 或图片时，必须清除文件头注释和 Author/Creator/Producer 属性里的 Python、trimesh、OpenSCAD、Blender Python、Codex、AI 等机器生成痕迹。
+④ 交付话术去 AI 腔：给我发给客户的回复和说明，用一线建模师/设计师的简短大白话直说重点（改了什么、尺寸/破面/分件状态、下厂注意项），严禁 Markdown 源码符号（**、###）、严禁堆砌 emoji、严禁「值得注意的是/总而言之/以下是为您整理的/很高兴为您服务」等 AI 套话。
 请按 3 步执行：
 1. 客户深层需求简明总结（5 行大白话）：写清最终要做什么、拿去怎么用、最在意的痛点与核心效果；标明分别参考哪几个附件（001/002…）及避坑雷区；把客户模糊口语优化成清晰可执行的专业要点（语音有歧义单独标出，严禁编造硬参数）。
 2. 精准提问 + 高质量初稿（默认）：该问的一个不漏、废话一句不问，凡是影响尺寸、工艺、交付格式、核心效果或易导致返工的模糊点按轻重列出并附带专业推荐选项，整理成可直接发给客户的简短确认话术；若缺根本无法动工的硬条件先只出确认清单；只要大方向明确，就直接做出可发客户验收的高质量商业初稿/样稿（次要细节按行业高标准补齐），把待确认项附在后面，自检无误后再交给我。
@@ -687,29 +716,109 @@ const CODEX_START_PROMPT = `【开工指令模板开始】
 【开工指令模板结束】`;
 const CODEX_RESUME_PROMPT = `【续改口令模板开始】
 客户发新消息了，请重新读取本地文件夹 <项目路径> 里最新的 000_最新变化.md、000_chat.md 和新增编号附件（重点看最新红圈标注与引用指向），以最新时间线为准先用 3 行确认本轮改动点，然后直接更新样稿（若客户已明确满意则直接出商业终稿）。
+防串台约束：若记录中出现客服私聊转发的与当前主群项目明显无关的其他新派单，一律自动忽略，严禁混入当前项目。
+真实设计师交付红线（逐条遵守）：
+① 文件隔离：所有发给客户的成品只能放进 交付给客户/ 目录，严禁混入 .md 聊天记录、.py/.scad 脚本、调试截图、日志或分析报告；根目录的 000_chat.md、ALL_FOR_AI.md、000_最新变化.md 与草稿一律不得外发。
+② 命名去机器味：成品文件名用常规中文/行业工程命名（如 产品名_分件版_1125.stl），严禁出现 AI、Codex、GPT、Antigravity、auto、fixed、v1_final_ai、README、summary 等字样。
+③ 清洗元数据与文件头：生成 3D 文件（OBJ/STL/3MF/STEP/FBX）、Office 文档、PDF 或图片时，必须清除文件头注释和 Author/Creator/Producer 属性里的 Python、trimesh、OpenSCAD、Blender Python、Codex、AI 等机器生成痕迹。
+④ 交付话术去 AI 腔：给我发给客户的回复和说明，用一线建模师/设计师的简短大白话直说重点（改了什么、尺寸/破面/分件状态、下厂注意项），严禁 Markdown 源码符号（**、###）、严禁堆砌 emoji、严禁「值得注意的是/总而言之/以下是为您整理的/很高兴为您服务」等 AI 套话。
 【续改口令模板结束】`;
 function fillCodexPrompt(tpl, folder){ return tpl.split('<项目路径>').join(folder); }
-async function copyCodexText(text, label){
-  if(!text){ setMsg('请先开启一个实时目录',true); return; }
+async function writeClipboard(text){
   try{ await navigator.clipboard.writeText(text); }
   catch(e){
     const ta=document.createElement('textarea'); ta.value=text;
     document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove();
   }
+}
+async function copyCodexText(text, label){
+  if(!text){ setMsg('请先开启一个实时目录',true); return; }
+  await writeClipboard(text);
   setMsg(label+'已复制到剪贴板');
+}
+function buildReconcileAnchor(info){
+  const msgs=Number(info.messages)||0;
+  const t=String(info.latest_time||info.latest||'—');
+  const att=String(info.latest_attach_no||'无');
+  return `【本轮对账基准：共 ${msgs} 条消息，最新消息时间 ${t}，最新附件编号 ${att}】\n`
+    + `强制核对：你回答的第一行必须固定写出「✅ 已对齐至 ${t}（共 ${msgs} 条 / 最新附件 ${att}），本轮已跟进客户最新要求：<用一句话概括>」；如果你实际读到的 000_chat.md 比该时间或条数旧，请立刻停止操作并直接报红提醒我未同步到位，严禁按旧记录硬做！\n`;
+}
+async function quickSyncThenCopy(btn, tpl, label){
+  const text=fillCodexPrompt(tpl, btn.dataset.folder||'');
+  if(!text){ setMsg('请先开启一个实时目录',true); return; }
+  const original=btn.textContent;
+  btn.textContent='同步中...'; btn.disabled=true;
+  let info=null;
+  try{
+    // 8 秒超时兜底：仅针对当前这 1 个项目做极速同步，绝不拖其它项目
+    info=await api('/api/codex/quick-sync',{id:btn.dataset.id},8000);
+  }catch(e){
+    setMsg('单项目同步未完成，已直接复制（请稍后点「立即刷新」确认）',true);
+  }finally{
+    btn.textContent=original; btn.disabled=false;
+  }
+  // 前置秒刷完成即清零红点，再把「锚点 + 原模板」写入剪贴板
+  if(info){
+    try{ await api('/api/codex/mark-sent',{id:btn.dataset.id,count:info.messages}); }
+    catch(e){}
+  }
+  // 真实同步数据 → 顶部两行对账锚点；原有全部规则与交付红线完整保留在下方
+  await writeClipboard(info?buildReconcileAnchor(info)+text:text);
+  if(info){
+    const raw=String(info.latest_time||info.latest||'');
+    const hhmmss=(raw.match(/(\d{2}:\d{2}:\d{2})/)||[])[1]||raw||'—';
+    setMsg('已同步至最新（最新消息 '+hhmmss+'，共 '
+      +(info.messages||0)+' 条）并复制'+label);
+  }
+  codexStatus().catch(()=>{});
 }
 function renderCodexList(d){
   const box=$('#codexList');
   if(!box) return;
   const all=d.projects||[];
-  const items=S.liveFilter==='all'?all
-    :all.filter(p=>(p.target||'codex')===S.liveFilter);
-  box.innerHTML = items.length ? items.map(p=>`
-    <div class="scope" style="margin-top:10px;background:#f8fafc">
+  const q=String(S.codexSearch||'').trim().toLowerCase();
+  const unsentOf=p=>Math.max(0,((p.stats&&p.stats.messages)||0)-(p.last_sent_count||0));
+  const filtered=all.filter(p=>{
+    if(S.liveFilter!=='all' && (p.target||'codex')!==S.liveFilter) return false;
+    if(!q) return true;
+    const sc=p.scope||{};
+    const names=((sc.items||[sc]).map(e=>String(e.name||e.cid||''))).join(' ');
+    return [p.alias_note,p.name,p.folder,p.latest_preview,p.main_group,names]
+      .join(' ').toLowerCase().includes(q);
+  });
+  // 有未发 AI 新消息优先 → 最新消息时间倒序，刚来新消息的单子自动置顶
+  const items=filtered.slice().sort((a,b)=>{
+    const ua=unsentOf(a)>0?1:0, ub=unsentOf(b)>0?1:0;
+    if(ua!==ub) return ub-ua;
+    return (Number(b.latest_msg_ts)||0)-(Number(a.latest_msg_ts)||0);
+  });
+  box.innerHTML = items.length ? items.map(p=>{
+    const unsent=unsentOf(p);
+    // 兜底：即使后端字段缺失/页面是旧缓存数据，也从 scope 直接推断私聊锁定状态
+    const sc=p.scope||{};
+    const entries=sc.items||(sc.cid?[sc]:[]);
+    const hasDm=(p.has_dm!==undefined?p.has_dm:
+      entries.some(e=>String(e.cid||'').startsWith('S:')));
+    const isLocked=(p.dm_locked!==undefined?p.dm_locked:
+      entries.some(e=>String(e.cid||'').startsWith('S:')&&e.locked));
+    const hasGroup=(p.has_group!==undefined?p.has_group:
+      entries.some(e=>String(e.cid||'').startsWith('R:')));
+    const other=p.target==='antigravity'?'codex':'antigravity';
+    const otherLabel=p.target==='antigravity'?'转到Codex':'转到反重力';
+    return `
+    <div class="scope ${unsent?'card-unsent':''}" style="margin-top:10px;background:#f8fafc">
       <div class="row" style="justify-content:space-between;align-items:flex-start">
         <div>
-          <span class="rootbadge ${p.target==='antigravity'?'purple':'blue'}">${p.target==='antigravity'?'反重力':'Codex'}</span>
-          <b>${esc(p.name)}</b> <span class="tag ok">${esc(p.status==='running'?'实时同步中':'已停止')}</span>
+          <div class="row" style="gap:6px;align-items:center;flex-wrap:wrap">
+            <span class="rootbadge ${p.target==='antigravity'?'purple':'blue'}">${p.target==='antigravity'?'反重力':'Codex'}</span>
+            <span class="note-title">${esc(p.alias_note||p.name)}${p.alias_note?`<span class="orig"> (${esc(p.name)})</span>`:''}</span>
+            <button class="editnote" data-act="rename-note" data-id="${esc(p.id)}" data-note="${esc(p.alias_note||'')}" title="改人话备注名（不改物理路径）">✏️ 改备注</button>
+            <span class="tag ok">${esc(p.status==='running'?'实时同步中':'已停止')}</span>
+            ${unsent?`<span class="unsentbadge">🔴 有 ${unsent} 条新消息未发 AI</span>`:''}
+          </div>
+          ${p.latest_preview?`<div class="previewline">💬 最新：${esc(p.latest_preview)}</div>`:''}
+          ${isLocked?`<div class="locktag">🔒 客服私聊已锁定（防串新单） · ${hasGroup?'仅追群聊增量':'仅锁当前私聊范围'}</div>`:''}
+          ${p.sync_pending?`<div class="locktag" style="background:#fff7ed;border-color:#fdba74;color:#9a3412">⚠️ 上次同步待重试 · 下一轮 ${esc(String(d.interval||3))} 秒自动补跑</div>`:''}
           <div class="mono small" style="margin-top:4px">${esc(p.folder)}</div>
           <div class="small">🫀 后台监控心跳 <b>${esc(d.heartbeat||'—')}</b>（每 ${esc(String(d.interval||5))} 秒检测 · 监控中）</div>
           <div class="small">✍️ 最新消息写入 <b>${esc(p.last_write||p.last_update||'—')}</b>（${p.stats&&p.stats.messages||0} 条消息 / ${p.stats&&p.stats.attachments||0} 个附件）</div>
@@ -721,11 +830,15 @@ function renderCodexList(d){
           <button class="btn ghost" data-act="copy-resume" data-id="${esc(p.id)}" data-folder="${esc(p.folder)}">复制续改口令</button>
           <button class="btn ghost" data-act="open" data-id="${esc(p.id)}">打开目录</button>
           <button class="btn ghost" data-act="refresh" data-id="${esc(p.id)}">立即刷新</button>
+          <button class="btn ghost" data-act="transfer" data-id="${esc(p.id)}" data-target="${other}" data-name="${esc(p.name)}">${otherLabel}</button>
+          ${hasDm?`
+          <button class="btn ghost" data-act="pull-dm" data-id="${esc(p.id)}">补拉私聊新消息</button>
+          <button class="btn ghost" data-act="toggle-lock" data-id="${esc(p.id)}">切换锁定/解锁</button>`:''}
           <button class="btn ghost" data-act="stop" data-id="${esc(p.id)}">停止并移出</button>
         </div>
       </div>
-    </div>`).join('')
-    : '<div class="hint" style="margin-top:10px">当前没有实时在办项目。选好会话与时间范围后点「开启 Codex 实时目录」。</div>';
+    </div>`;}).join('')
+    : '<div class="hint" style="margin-top:10px">当前没有实时在办项目。选好会话与时间范围后点「同步到 Codex / 反重力」。</div>';
   $$('#codexList button[data-act]').forEach(b=>b.addEventListener('click',()=>codexAction(b)));
 }
 async function codexAction(btn){
@@ -740,20 +853,50 @@ async function codexAction(btn){
       }
       setMsg('目录路径已复制：'+folder); return;
     }
+    if(act==='rename-note'){
+      const note=prompt('给这个单子起个人话备注名（只改界面显示，绝不改动物理文件夹路径）：',
+                        btn.dataset.note||'');
+      if(note===null) return;
+      const r=await api('/api/codex/rename-note',{id,alias_note:note.trim()});
+      setMsg(r.folder_unchanged?'备注已保存（物理路径未改动）':'备注已保存');
+      await codexStatus(); return;
+    }
     if(act==='copy-start'){
-      await copyCodexText(fillCodexPrompt(CODEX_START_PROMPT, btn.dataset.folder||''),'开工指令'); return;
+      await quickSyncThenCopy(btn, CODEX_START_PROMPT, '开工指令'); return;
     }
     if(act==='copy-resume'){
-      await copyCodexText(fillCodexPrompt(CODEX_RESUME_PROMPT, btn.dataset.folder||''),'续改口令'); return;
+      await quickSyncThenCopy(btn, CODEX_RESUME_PROMPT, '续改口令'); return;
     }
     if(act==='open'){ await api('/api/codex/open',{id}); setMsg('已在资源管理器打开目录'); return; }
     if(act==='refresh'){ setMsg('正在立即刷新…'); await api('/api/codex/refresh',{id}); setMsg('已增量刷新'); }
+    if(act==='pull-dm'){
+      if(!confirm('仅在客服私聊补充了本单资料时使用，确认拉取？')) return;
+      const d=await api('/api/codex/pull-dm',{id});
+      setMsg('已补拉私聊新消息：'+JSON.stringify(d.pulled||[]).slice(0,140));
+      await codexStatus(); return;
+    }
+    if(act==='toggle-lock'){
+      const d=await api('/api/codex/toggle-lock',{id});
+      setMsg('私聊锁定状态：'+(d.toggled||[]).map(x=>x.locked?'已锁定':'已解锁').join('、'));
+      await codexStatus(); return;
+    }
+    if(act==='transfer'){
+      const to=btn.dataset.target==='antigravity'?'反重力':'Codex';
+      if(!confirm('将把「'+(btn.dataset.name||'该项目')+'」整个文件夹完整移动到 '+to
+        +' 根目录并继续同步（草稿、附件、交付给客户 全部一起过去，不丢文件）。确认转移？')) return;
+      const r=await api('/api/codex/transfer',{id,target:btn.dataset.target});
+      if(r.already_there){ setMsg('该项目已在 '+to+'，无需转移'); return; }
+      setMsg('已转移到新目录：'+r.to);
+      showCodexPath(r.to,false);
+      await codexStatus(); return;
+    }
     if(act==='stop'){ await api('/api/codex/stop',{id}); setMsg('已停止同步，目录文件完整保留'); }
     await codexStatus();
   }catch(e){ setMsg(e.message,true); }
 }
 function showConflict(d){
   S.conflictProject=d.project||null;
+  S.conflictTarget=d.target||'codex';
   const bar=$('#conflictBar'), txt=$('#conflictText');
   if(txt) txt.textContent='⚠️ 该单子已在 '+(d.existing_target_label||'其它软件')
     +' 实时同步中，为避免两个 AI 同时改稿冲突，建议只在一个软件里处理。原目录：'
@@ -762,8 +905,18 @@ function showConflict(d){
   setMsg('已拦截跨软件冲突，未新建目录',true);
 }
 async function doCodexStart(){
+  // 每次开启前先清空上一次的绿色成功条与黄色警告条，绝不叠在一起
+  const prevPath=$('#codexPathBar'), prevConflict=$('#conflictBar');
+  if(prevPath) prevPath.style.display='none';
+  if(prevConflict) prevConflict.style.display='none';
   const scope=codexScope();
   if(!scope){ setMsg('请先在左侧勾选导出会话或点选一个会话',true); return; }
+  const entries=scope.items||[scope];
+  const hasGroup=entries.some(e=>String(e.cid||'').startsWith('R:'));
+  const hasDm=entries.some(e=>String(e.cid||'').startsWith('S:'));
+  if(!hasGroup && hasDm){
+    if(!confirm('提示：客服私聊窗口常会混入后续新派的其他单子，建议搭配对应客户群一起开启（私聊将自动锁定不追新），或确认仅锁定当前已选私聊范围？')) return;
+  }
   const btn=$('#btnCodexStart'); btn.disabled=true; btn.dataset.busy='1';
   try{
     const d=await api('/api/codex/start',{
@@ -1467,6 +1620,10 @@ $$('#targetSwitch .segb').forEach(b=>
   b.addEventListener('click',()=>setLiveTarget(b.dataset.target)));
 $$('#targetFilter .cap').forEach(b=>
   b.addEventListener('click',()=>setLiveFilter(b.dataset.filter)));
+$('#codexSearch').addEventListener('input', e=>{
+  S.codexSearch=e.target.value||'';
+  if(S.lastCodexStatus) renderCodexList(S.lastCodexStatus);
+});
 setLiveTarget(S.liveTarget);
 $('#btnConflictClose').addEventListener('click',()=>{
   const bar=$('#conflictBar'); if(bar) bar.style.display='none';
@@ -1478,6 +1635,21 @@ $('#btnGotoOriginal').addEventListener('click', ()=>{
   }
   const bar=$('#conflictBar'); if(bar) bar.style.display='none';
   switchTab('codex'); codexStatus().catch(()=>{});
+});
+$('#btnTransferHere').addEventListener('click', async ()=>{
+  if(!S.conflictProject) return;
+  const to=S.conflictTarget==='antigravity'?'反重力':'Codex';
+  if(!confirm('将把原项目整个文件夹完整移动到 '+to
+    +' 根目录并继续同步，草稿、附件、交付给客户 全部一起过去，不丢文件。确认转移？')) return;
+  try{
+    const r=await api('/api/codex/transfer',
+      {id:S.conflictProject.id,target:S.conflictTarget});
+    const bar=$('#conflictBar'); if(bar) bar.style.display='none';
+    if(r.already_there){ setMsg('该项目已在 '+to+'，无需转移'); return; }
+    setMsg('已转移到新目录：'+r.to);
+    showCodexPath(r.to,false);
+    await codexStatus();
+  }catch(e){ setMsg(e.message||String(e),true); }
 });
 // 界面卡片每 5 秒静默刷新（真正的增量同步在后端独立线程里，同样 5 秒水印检查）
 setInterval(()=>{ codexStatus().catch(()=>{}); }, 5000);

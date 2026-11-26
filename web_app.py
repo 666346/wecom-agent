@@ -258,7 +258,10 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(code)
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(data)))
-        self.send_header("Cache-Control", "no-store")
+        self.send_header("Cache-Control",
+                         "no-store, no-cache, must-revalidate, max-age=0")
+        self.send_header("Pragma", "no-cache")
+        self.send_header("Expires", "0")
         self.end_headers()
         try:
             self.wfile.write(data)
@@ -280,7 +283,10 @@ class Handler(BaseHTTPRequestHandler):
             f"attachment; filename=\"{ascii_name}\"; filename*=UTF-8''{quote(filename, safe='')}",
         )
         self.send_header("Content-Length", str(size))
-        self.send_header("Cache-Control", "no-store")
+        self.send_header("Cache-Control",
+                         "no-store, no-cache, must-revalidate, max-age=0")
+        self.send_header("Pragma", "no-cache")
+        self.send_header("Expires", "0")
         self.end_headers()
         try:
             with target.open("rb") as source:
@@ -433,6 +439,23 @@ class Handler(BaseHTTPRequestHandler):
                     return self._json(T.codex_start(body))
                 if path == "/api/codex/refresh":
                     return self._json({"project": T.codex_refresh(body.get("id") or "")})
+                if path == "/api/codex/quick-sync":
+                    return self._json(T.codex_quick_sync(body.get("id") or ""))
+                if path == "/api/codex/rename-note":
+                    return self._json(T.codex_rename_note(
+                        body.get("id") or "", body.get("alias_note") or ""))
+                if path == "/api/codex/mark-sent":
+                    return self._json(T.codex_mark_sent(
+                        body.get("id") or "", body.get("count")))
+                if path == "/api/codex/pull-dm":
+                    return self._json(T.codex_pull_dm(body.get("id") or ""))
+                if path == "/api/codex/toggle-lock":
+                    return self._json(T.codex_toggle_lock(
+                        body.get("id") or "", body.get("cid"),
+                        body.get("locked")))
+                if path == "/api/codex/transfer":
+                    return self._json(T.codex_transfer(
+                        body.get("id") or "", body.get("target") or "codex"))
                 if path == "/api/codex/stop":
                     return self._json(T.codex_stop(body.get("id") or ""))
                 if path == "/api/codex/open":
@@ -512,13 +535,14 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def codex_worker():
-    """每 5 秒静默检查水印；只做文件 stat 比对，纯 Python 线程不启子进程（0 黑框）。"""
+    """按配置间隔静默检查水印；只做文件 stat 比对，纯 Python 线程不启子进程（0 黑框）。"""
     log(f"[codex] 实时在办目录监控已启动（{T.CODEX_INTERVAL_SECONDS}s 水印检查）")
     while True:
         try:
             outcome = T.codex_tick()
             if outcome.get("refreshed"):
-                log(f"[codex] 增量刷新 {len(outcome['refreshed'])} 个项目")
+                log(f"[codex] 增量刷新 {len(outcome['refreshed'])} 个项目"
+                    f"，精准跳过 {len(outcome.get('skipped') or [])} 个")
         except Exception as exc:
             log(f"[codex] tick 异常: {exc}")
         time.sleep(T.CODEX_INTERVAL_SECONDS)
