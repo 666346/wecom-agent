@@ -293,6 +293,26 @@ body{display:flex;flex-direction:column}
 .locktag{display:inline-flex;align-items:center;margin:5px 0 0;padding:2px 9px;
   border-radius:999px;background:#fef3c7;border:1px solid #fcd34d;
   color:#92400e;font-size:11px;font-weight:600}
+.scopebar{display:flex;flex-wrap:wrap;gap:5px;margin-top:5px;align-items:center}
+.scopetag{display:inline-flex;align-items:center;gap:3px;padding:2px 8px;border-radius:999px;
+  font-size:11px;font-weight:600;max-width:360px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.scopetag.grp{background:#eff6ff;border:1px solid #bfdbfe;color:#1e40af}
+.scopetag.dm{background:#f5f3ff;border:1px solid #ddd6fe;color:#5b21b6}
+.modalmask{position:fixed;inset:0;background:rgba(15,23,42,.42);z-index:80;
+  display:flex;align-items:center;justify-content:center;padding:16px}
+.modalbox{background:#fff;border:1px solid var(--border);border-radius:12px;
+  box-shadow:0 20px 50px rgba(15,23,42,.22);width:min(560px,96vw);max-height:82vh;
+  display:flex;flex-direction:column;padding:14px 16px}
+.modal-list{flex:1;min-height:180px;max-height:46vh;overflow-y:auto;border:1px solid var(--border);
+  border-radius:8px;padding:4px;background:#fafbfc}
+.scopeopt{display:flex;align-items:center;gap:8px;padding:7px 9px;border-radius:7px;
+  border:1px solid transparent;cursor:pointer;font-size:12px;margin-bottom:3px;background:#fff}
+.scopeopt:hover:not(.disabled){background:#f8fafc;border-color:#cbd5e1}
+.scopeopt.picked{background:#eff6ff;border-color:#3b82f6}
+.scopeopt.disabled{opacity:.52;cursor:not-allowed;background:#f1f5f9}
+.scopeopt .smeta{flex:1;min-width:0}
+.scopeopt .sname{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.scopeopt .ssub{font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .note-title{font-size:14px;font-weight:700;color:#1d4ed8}
 .note-title .orig{font-weight:400;color:#64748b;font-size:11px}
 .editnote{border:0;background:transparent;cursor:pointer;font-size:11px;
@@ -307,6 +327,12 @@ body{display:flex;flex-direction:column}
 .card-unsent{border:1px solid #f97316 !important;box-shadow:0 0 0 2px #ffedd5}
 .codesearch{padding:5px 11px;border:1px solid var(--border);border-radius:999px;
   font-size:12px;min-width:230px;font-family:inherit;margin-left:6px}
+.orderbadge{display:inline-flex;align-items:center;padding:2px 8px;border-radius:6px;
+  background:#0f172a;color:#fff;font-size:11px;font-weight:800;
+  letter-spacing:.5px;flex:none}
+.sortsel{padding:4px 9px;border:1px solid var(--border);border-radius:999px;
+  font-size:12px;background:#fff;font-family:inherit;margin-left:6px;
+  cursor:pointer;color:var(--text)}
 </style>
 </head>
 <body>
@@ -437,7 +463,7 @@ body{display:flex;flex-direction:column}
       <div class="tabscroll">
         <div class="card">
           <h2>AI 在办项目 · 双根目录配置</h2>
-          <p class="desc">两个软件的活目录<b>物理分开、互不混淆</b>：5 秒心跳、000_最新变化.md、客户 ZIP 自动解压、开工/续改口令完全一致，只有落盘根目录不同。同组会话只在一个软件里处理，避免两个 AI 同时改稿。</p>
+          <p class="desc">两个软件的活目录<b>物理分开、互不混淆</b>：3 秒心跳、000_最新变化.md、客户 ZIP 自动解压、开工/续改口令完全一致，只有落盘根目录不同。同组会话只在一个软件里处理，避免两个 AI 同时改稿。</p>
           <div class="rootrow">
             <span class="rootbadge blue">Codex</span>
             <input type="text" id="codexRoot" placeholder="Codex 根目录">
@@ -463,6 +489,11 @@ body{display:flex;flex-direction:column}
           <button class="cap" data-filter="antigravity">反重力</button>
           <input type="search" class="codesearch" id="codexSearch"
                  placeholder="搜索备注 / 群名 / 目录 / 最新消息">
+          <select class="sortsel" id="codexSort" title="卡片排序方式">
+            <option value="new">新消息优先（默认）</option>
+            <option value="order">接入顺序 #01→#N</option>
+            <option value="active">最新活跃</option>
+          </select>
         </div>
         <div id="codexList" class="codexgrid"></div>
       </div>
@@ -517,6 +548,35 @@ body{display:flex;flex-direction:column}
   <div class="grid" id="acct"></div>
   <div class="row" style="margin-top:10px"><span class="small" id="locked"></span></div>
 </div>
+<div class="modalmask" id="addScopeModal" style="display:none">
+  <div class="modalbox">
+    <div class="row" style="justify-content:space-between;align-items:center;margin-bottom:6px">
+      <b id="addScopeTitle">追加会话到项目</b>
+      <button class="fbtn" id="btnAddScopeClose">关闭 ×</button>
+    </div>
+    <div class="small" style="margin-bottom:8px;color:var(--muted)">
+      绝不改原有目录路径与交付文件；纯私聊追加客户群后将自动锁定原私聊防串单，群聊追加客服私聊默认锁定历史。
+    </div>
+    <div class="row" style="gap:6px;margin-bottom:8px;flex-wrap:wrap">
+      <input type="search" id="addScopeSearch" placeholder="按群名 / 客服名 / 成员名筛选会话…" style="flex:1;min-width:210px;padding:6px 9px;font-size:12px">
+      <select id="addScopeRange" class="sortsel" title="新会话起始时间范围">
+        <option value="7d" selected>近 7 天（默认）</option>
+        <option value="today">今天</option>
+        <option value="3d">近 3 天</option>
+        <option value="30d">近 30 天</option>
+        <option value="all">全部历史</option>
+      </select>
+    </div>
+    <div id="addScopeList" class="modal-list"><div class="hint">加载会话列表…</div></div>
+    <div class="row" style="justify-content:space-between;align-items:center;margin-top:10px;gap:8px">
+      <span class="small" id="addScopePicked" style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">请点选下方要追加的群聊或客服</span>
+      <div class="row" style="gap:6px;flex:none">
+        <button class="btn ghost" id="btnAddScopeCancel">取消</button>
+        <button class="btn primary" id="btnAddScopeConfirm" disabled>确认加入本项目</button>
+      </div>
+    </div>
+  </div>
+</div>
 <div id="msgbar"></div>
 
 <script>
@@ -529,7 +589,8 @@ const S = { groups:[], watched:[], selected:null, syncEnabled:false, lastOutDir:
             lastId:'', liveBusy:false, liveAt:'', searchTimer:null, loadSeq:0,
             exportGroups:new Map(), msgSelByGroup:new Map(), groupInfo:new Map(),
             liveTarget:readLiveTarget(), liveFilter:'all', lastCodexStatus:null,
-            codexSearch:'', conflictProject:null };
+            codexSearch:'', codexSort:'new', conflictProject:null,
+            addScopeProject:null, addScopePicked:null };
 let msgTimer = null;
 
 function readLiveTarget(){
@@ -709,6 +770,12 @@ const CODEX_START_PROMPT = `【开工指令模板开始】
 ② 命名去机器味：成品文件名用常规中文/行业工程命名（如 产品名_分件版_1125.stl），严禁出现 AI、Codex、GPT、Antigravity、auto、fixed、v1_final_ai、README、summary 等字样。
 ③ 清洗元数据与文件头：生成 3D 文件（OBJ/STL/3MF/STEP/FBX）、Office 文档、PDF 或图片时，必须清除文件头注释和 Author/Creator/Producer 属性里的 Python、trimesh、OpenSCAD、Blender Python、Codex、AI 等机器生成痕迹。
 ④ 交付话术去 AI 腔：给我发给客户的回复和说明，用一线建模师/设计师的简短大白话直说重点（改了什么、尺寸/破面/分件状态、下厂注意项），严禁 Markdown 源码符号（**、###）、严禁堆砌 emoji、严禁「值得注意的是/总而言之/以下是为您整理的/很高兴为您服务」等 AI 套话。
+【发给客户的真人分段话术规范】
+每次交初稿、交改稿或需要向客户确认细节时，必须在最后附上一份可直接复制发进企微群的「真人分段话术」：
+- 分段发送：拆成 2~4 段独立短消息（如：第1段发图后简短开场 → 第2段先定最关键的尺寸/工艺 → 第3段对应标注图逐点快问 → 第4段自然收尾给文件预期），每段 1~3 句，像真人发微信一条条发，绝不堆成一大段作文。
+- 彻底去 AI 味、零 Markdown：话术正文里严禁出现 **加粗**、### 标题、- 列表或「综上 / 以下是 / 敬请审阅 / 已为您完成」等机器人腔，一律用自然平实的口语大白话。
+- 问题改成快问快答：把拿不准的细节尽量问成「对不对 / 行不行 / 选A还是B」，让客户扫一眼回几个字就能拍板。
+- 收尾给明确预期：最后一句自然告知下一步（例如「您看下这几处怎么定，回完我马上改好把全套源文件发您」）。
 请按 3 步执行：
 1. 客户深层需求简明总结（5 行大白话）：写清最终要做什么、拿去怎么用、最在意的痛点与核心效果；标明分别参考哪几个附件（001/002…）及避坑雷区；把客户模糊口语优化成清晰可执行的专业要点（语音有歧义单独标出，严禁编造硬参数）。
 2. 精准提问 + 高质量初稿（默认）：该问的一个不漏、废话一句不问，凡是影响尺寸、工艺、交付格式、核心效果或易导致返工的模糊点按轻重列出并附带专业推荐选项，整理成可直接发给客户的简短确认话术；若缺根本无法动工的硬条件先只出确认清单；只要大方向明确，就直接做出可发客户验收的高质量商业初稿/样稿（次要细节按行业高标准补齐），把待确认项附在后面，自检无误后再交给我。
@@ -722,6 +789,12 @@ const CODEX_RESUME_PROMPT = `【续改口令模板开始】
 ② 命名去机器味：成品文件名用常规中文/行业工程命名（如 产品名_分件版_1125.stl），严禁出现 AI、Codex、GPT、Antigravity、auto、fixed、v1_final_ai、README、summary 等字样。
 ③ 清洗元数据与文件头：生成 3D 文件（OBJ/STL/3MF/STEP/FBX）、Office 文档、PDF 或图片时，必须清除文件头注释和 Author/Creator/Producer 属性里的 Python、trimesh、OpenSCAD、Blender Python、Codex、AI 等机器生成痕迹。
 ④ 交付话术去 AI 腔：给我发给客户的回复和说明，用一线建模师/设计师的简短大白话直说重点（改了什么、尺寸/破面/分件状态、下厂注意项），严禁 Markdown 源码符号（**、###）、严禁堆砌 emoji、严禁「值得注意的是/总而言之/以下是为您整理的/很高兴为您服务」等 AI 套话。
+【发给客户的真人分段话术规范】
+每次交初稿、交改稿或需要向客户确认细节时，必须在最后附上一份可直接复制发进企微群的「真人分段话术」：
+- 分段发送：拆成 2~4 段独立短消息（如：第1段发图后简短开场 → 第2段先定最关键的尺寸/工艺 → 第3段对应标注图逐点快问 → 第4段自然收尾给文件预期），每段 1~3 句，像真人发微信一条条发，绝不堆成一大段作文。
+- 彻底去 AI 味、零 Markdown：话术正文里严禁出现 **加粗**、### 标题、- 列表或「综上 / 以下是 / 敬请审阅 / 已为您完成」等机器人腔，一律用自然平实的口语大白话。
+- 问题改成快问快答：把拿不准的细节尽量问成「对不对 / 行不行 / 选A还是B」，让客户扫一眼回几个字就能拍板。
+- 收尾给明确预期：最后一句自然告知下一步（例如「您看下这几处怎么定，回完我马上改好把全套源文件发您」）。
 【续改口令模板结束】`;
 function fillCodexPrompt(tpl, folder){ return tpl.split('<项目路径>').join(folder); }
 async function writeClipboard(text){
@@ -750,10 +823,10 @@ async function quickSyncThenCopy(btn, tpl, label){
   btn.textContent='同步中...'; btn.disabled=true;
   let info=null;
   try{
-    // 8 秒超时兜底：仅针对当前这 1 个项目做极速同步，绝不拖其它项目
-    info=await api('/api/codex/quick-sync',{id:btn.dataset.id},8000);
+    // 18 秒超时兜底：仅针对当前这 1 个项目；无变化毫秒快返，繁忙时后端温和降级
+    info=await api('/api/codex/quick-sync',{id:btn.dataset.id},18000);
   }catch(e){
-    setMsg('单项目同步未完成，已直接复制（请稍后点「立即刷新」确认）',true);
+    setMsg('后台同步稍忙，已按当前最新落盘数据继续');
   }finally{
     btn.textContent=original; btn.disabled=false;
   }
@@ -768,7 +841,8 @@ async function quickSyncThenCopy(btn, tpl, label){
     const raw=String(info.latest_time||info.latest||'');
     const hhmmss=(raw.match(/(\d{2}:\d{2}:\d{2})/)||[])[1]||raw||'—';
     setMsg('已同步至最新（最新消息 '+hhmmss+'，共 '
-      +(info.messages||0)+' 条）并复制'+label);
+      +(info.messages||0)+' 条）并复制'+label
+      +(info.degraded?' · '+String(info.note||'按当前落盘数据继续'):''));
   }
   codexStatus().catch(()=>{});
 }
@@ -782,12 +856,18 @@ function renderCodexList(d){
     if(S.liveFilter!=='all' && (p.target||'codex')!==S.liveFilter) return false;
     if(!q) return true;
     const sc=p.scope||{};
-    const names=((sc.items||[sc]).map(e=>String(e.name||e.cid||''))).join(' ');
+    const names=((p.scopes&&p.scopes.length)?p.scopes:(sc.items||[sc]))
+      .map(e=>String(e.display_name||e.name||e.cid||'')).join(' ');
     return [p.alias_note,p.name,p.folder,p.latest_preview,p.main_group,names]
       .join(' ').toLowerCase().includes(q);
   });
-  // 有未发 AI 新消息优先 → 最新消息时间倒序，刚来新消息的单子自动置顶
+  // 三种排序：新消息优先（默认）/ 接入顺序 #01→#N / 最新活跃
+  const mode=S.codexSort||'new';
   const items=filtered.slice().sort((a,b)=>{
+    if(mode==='order')
+      return (Number(a.order_no)||9999)-(Number(b.order_no)||9999);
+    if(mode==='active')
+      return String(b.last_update||'').localeCompare(String(a.last_update||''));
     const ua=unsentOf(a)>0?1:0, ub=unsentOf(b)>0?1:0;
     if(ua!==ub) return ub-ua;
     return (Number(b.latest_msg_ts)||0)-(Number(a.latest_msg_ts)||0);
@@ -805,20 +885,34 @@ function renderCodexList(d){
       entries.some(e=>String(e.cid||'').startsWith('R:')));
     const other=p.target==='antigravity'?'codex':'antigravity';
     const otherLabel=p.target==='antigravity'?'转到Codex':'转到反重力';
+    const blurry=Number((p.stats&&p.stats.blurry_thumbs)||0);
+    const scopes=(Array.isArray(p.scopes)&&p.scopes.length)?p.scopes:entries.map(e=>{
+      const cid=String(e.cid||'');
+      return {account:e.account||'',cid,display_name:e.display_name||e.name||cid,
+              kind:cid.startsWith('R:')?'group':(cid.startsWith('S:')?'dm':'other'),
+              locked:!!e.locked};
+    });
+    const scopeBarHtml=scopes.length?`<div class="scopebar">${scopes.map(s=>s.kind==='group'
+      ?`<span class="scopetag grp" title="群聊：${esc(s.display_name||s.cid)}">👥 群聊：${esc(s.display_name||s.cid)}</span>`
+      :`<span class="scopetag dm" title="客服：${esc(s.display_name||s.cid)}${s.locked?'（已锁定）':''}">🎧 客服：${esc(s.display_name||s.cid)}${s.locked?' 🔒':''}</span>`
+    ).join('')}</div>`:'';
     return `
     <div class="scope ${unsent?'card-unsent':''}" style="margin-top:10px;background:#f8fafc">
       <div class="row" style="justify-content:space-between;align-items:flex-start">
         <div>
           <div class="row" style="gap:6px;align-items:center;flex-wrap:wrap">
             <span class="rootbadge ${p.target==='antigravity'?'purple':'blue'}">${p.target==='antigravity'?'反重力':'Codex'}</span>
+            <span class="orderbadge">#${String(p.order_no||0).padStart(2,'0')}</span>
             <span class="note-title">${esc(p.alias_note||p.name)}${p.alias_note?`<span class="orig"> (${esc(p.name)})</span>`:''}</span>
             <button class="editnote" data-act="rename-note" data-id="${esc(p.id)}" data-note="${esc(p.alias_note||'')}" title="改人话备注名（不改物理路径）">✏️ 改备注</button>
             <span class="tag ok">${esc(p.status==='running'?'实时同步中':'已停止')}</span>
             ${unsent?`<span class="unsentbadge">🔴 有 ${unsent} 条新消息未发 AI</span>`:''}
           </div>
+          ${scopeBarHtml}
           ${p.latest_preview?`<div class="previewline">💬 最新：${esc(p.latest_preview)}</div>`:''}
-          ${isLocked?`<div class="locktag">🔒 客服私聊已锁定（防串新单） · ${hasGroup?'仅追群聊增量':'仅锁当前私聊范围'}</div>`:''}
+          ${isLocked?`<div class="locktag">${hasGroup?'🔒 客服私聊已锁定（防串新单） · 仅追群聊增量':'🔒 纯私聊已锁定（当前不自动追新；如需 3 秒自动同步，点下方「切换锁定/解锁」即可）'}</div>`:''}
           ${p.sync_pending?`<div class="locktag" style="background:#fff7ed;border-color:#fdba74;color:#9a3412">⚠️ 上次同步待重试 · 下一轮 ${esc(String(d.interval||3))} 秒自动补跑</div>`:''}
+          ${blurry?`<div class="locktag" style="background:#fefce8;border-color:#fde047;color:#854d0e">⚠️ 含 ${blurry} 张模糊缩略图，企微点开大图即自动升级</div>`:''}
           <div class="mono small" style="margin-top:4px">${esc(p.folder)}</div>
           <div class="small">🫀 后台监控心跳 <b>${esc(d.heartbeat||'—')}</b>（每 ${esc(String(d.interval||5))} 秒检测 · 监控中）</div>
           <div class="small">✍️ 最新消息写入 <b>${esc(p.last_write||p.last_update||'—')}</b>（${p.stats&&p.stats.messages||0} 条消息 / ${p.stats&&p.stats.attachments||0} 个附件）</div>
@@ -830,6 +924,7 @@ function renderCodexList(d){
           <button class="btn ghost" data-act="copy-resume" data-id="${esc(p.id)}" data-folder="${esc(p.folder)}">复制续改口令</button>
           <button class="btn ghost" data-act="open" data-id="${esc(p.id)}">打开目录</button>
           <button class="btn ghost" data-act="refresh" data-id="${esc(p.id)}">立即刷新</button>
+          <button class="btn ghost" data-act="add-scope" data-id="${esc(p.id)}" data-name="${esc(p.alias_note||p.name)}">+ 追加会话</button>
           <button class="btn ghost" data-act="transfer" data-id="${esc(p.id)}" data-target="${other}" data-name="${esc(p.name)}">${otherLabel}</button>
           ${hasDm?`
           <button class="btn ghost" data-act="pull-dm" data-id="${esc(p.id)}">补拉私聊新消息</button>
@@ -868,7 +963,23 @@ async function codexAction(btn){
       await quickSyncThenCopy(btn, CODEX_RESUME_PROMPT, '续改口令'); return;
     }
     if(act==='open'){ await api('/api/codex/open',{id}); setMsg('已在资源管理器打开目录'); return; }
-    if(act==='refresh'){ setMsg('正在立即刷新…'); await api('/api/codex/refresh',{id}); setMsg('已增量刷新'); }
+    if(act==='refresh'){
+      const orig=btn.textContent;
+      btn.disabled=true; btn.textContent='刷新中...';
+      setMsg('正在同步最新消息并刷新活目录…');
+      try{
+        const t=await api('/api/codex/refresh',{id});
+        const done=t.task_id ? await waitTask(t.task_id, 90000) : {result:t};
+        const proj=(done.result&&done.result.project)||null;
+        const cnt=proj&&proj.stats?proj.stats.messages:null;
+        setMsg(cnt!=null ? ('已刷新到最新（共 '+cnt+' 条消息）') : '已增量刷新');
+      }finally{
+        btn.disabled=false; btn.textContent=orig;
+      }
+    }
+    if(act==='add-scope'){
+      await openAddScopeModal(id); return;
+    }
     if(act==='pull-dm'){
       if(!confirm('仅在客服私聊补充了本单资料时使用，确认拉取？')) return;
       const d=await api('/api/codex/pull-dm',{id});
@@ -893,6 +1004,110 @@ async function codexAction(btn){
     if(act==='stop'){ await api('/api/codex/stop',{id}); setMsg('已停止同步，目录文件完整保留'); }
     await codexStatus();
   }catch(e){ setMsg(e.message,true); }
+}
+function closeAddScopeModal(){
+  const modal=$('#addScopeModal');
+  if(modal) modal.style.display='none';
+  S.addScopeProject=null; S.addScopePicked=null;
+}
+function renderAddScopeList(){
+  const listEl=$('#addScopeList'), pickedEl=$('#addScopePicked'), confirmBtn=$('#btnAddScopeConfirm');
+  if(!listEl || !S.addScopeProject) return;
+  const proj=S.addScopeProject;
+  const sc=proj.scope||{};
+  const selfCids=new Set(((proj.scopes&&proj.scopes.length)?proj.scopes:(sc.items||(sc.cid?[sc]:[]))).map(e=>String(e.cid||'')));
+  const otherGroups=new Map();
+  for(const other of ((S.lastCodexStatus&&S.lastCodexStatus.projects)||[])){
+    if(other.id===proj.id) continue;
+    const osc=other.scope||{};
+    const olist=(other.scopes&&other.scopes.length)?other.scopes:(osc.items||(osc.cid?[osc]:[]));
+    for(const e of olist){
+      const cid=String(e.cid||'');
+      if(cid.startsWith('R:')) otherGroups.set(cid, '#'+String(other.order_no||0).padStart(2,'0')+' '+(other.alias_note||other.name||''));
+    }
+  }
+  const q=String(($('#addScopeSearch')&&$('#addScopeSearch').value)||'').trim().toLowerCase();
+  const toks=q?q.split('/').map(s=>s.trim()).filter(Boolean):[];
+  const rows=(S.groups||[]).filter(g=>{
+    if(!toks.length) return true;
+    const blob=[g.name,g.remark,g.id,(g.members||[]).join(' ')].join(' ').toLowerCase();
+    return toks.some(t=>blob.includes(t));
+  }).slice().sort(byActiveDesc);
+  listEl.innerHTML=rows.length?rows.slice(0,120).map(g=>{
+    const cid=String(g.id||'');
+    const isGrp=cid.startsWith('R:');
+    const inSelf=selfCids.has(cid);
+    const inOther=isGrp && otherGroups.has(cid);
+    const dis=inSelf||inOther;
+    const picked=S.addScopePicked && S.addScopePicked.account===g.account && S.addScopePicked.id===cid;
+    const members=(g.members||[]).join('、')||cid;
+    const badge=inSelf?'<span class="tag">已在本项目</span>':(inOther?`<span class="tag">已绑 ${esc(otherGroups.get(cid))}</span>`:'');
+    return `<div class="scopeopt ${picked?'picked':''} ${dis?'disabled':''}" data-acc="${esc(g.account)}" data-cid="${esc(cid)}" data-name="${esc(g.name||cid)}" data-dis="${dis?'1':''}">
+      <span class="scopetag ${isGrp?'grp':'dm'}" style="flex:none">${isGrp?'👥 群聊':'🎧 客服'}</span>
+      <div class="smeta">
+        <div class="sname">${esc(g.name||cid)}</div>
+        <div class="ssub">${esc(members)} · ${g.messages||0} 条 · ${esc(g.last_time||'')}</div>
+      </div>
+      ${badge}
+    </div>`;
+  }).join(''):'<div class="hint">没有匹配的群聊或客服会话</div>';
+  $$('#addScopeList .scopeopt').forEach(el=>el.addEventListener('click',()=>{
+    if(el.dataset.dis==='1') return;
+    S.addScopePicked={account:el.dataset.acc, id:el.dataset.cid, name:el.dataset.name};
+    renderAddScopeList();
+  }));
+  if(S.addScopePicked){
+    const k=String(S.addScopePicked.id||'').startsWith('R:')?'👥 群聊':'🎧 客服';
+    if(pickedEl) pickedEl.textContent='已选：'+k+' '+S.addScopePicked.name;
+    if(confirmBtn) confirmBtn.disabled=false;
+  }else{
+    if(pickedEl) pickedEl.textContent='请点选下方要追加的群聊或客服';
+    if(confirmBtn) confirmBtn.disabled=true;
+  }
+}
+async function openAddScopeModal(projectId){
+  const projects=(S.lastCodexStatus&&S.lastCodexStatus.projects)||[];
+  const proj=projects.find(p=>p.id===projectId);
+  if(!proj){ setMsg('找不到该项目，请先刷新列表',true); return; }
+  S.addScopeProject=proj; S.addScopePicked=null;
+  if($('#addScopeTitle')) $('#addScopeTitle').textContent='追加会话 → #'
+    +String(proj.order_no||0).padStart(2,'0')+' '+(proj.alias_note||proj.name);
+  if($('#addScopeSearch')) $('#addScopeSearch').value='';
+  if($('#addScopeRange')) $('#addScopeRange').value='7d';
+  if($('#addScopeModal')) $('#addScopeModal').style.display='flex';
+  if(!S.groups || !S.groups.length){
+    if($('#addScopeList')) $('#addScopeList').innerHTML='<div class="hint">正在读取会话列表…</div>';
+    try{
+      const c=await api('/api/conversations');
+      S.groups=c.conversations||[];
+    }catch(e){ setMsg('读取会话列表失败：'+e.message,true); }
+  }
+  renderAddScopeList();
+}
+async function confirmAddScope(){
+  if(!S.addScopeProject || !S.addScopePicked) return;
+  const btn=$('#btnAddScopeConfirm');
+  const orig=btn?btn.textContent:'确认加入本项目';
+  if(btn){ btn.disabled=true; btn.textContent='加入并同步中…'; }
+  try{
+    const rng=($('#addScopeRange')&&$('#addScopeRange').value)||'7d';
+    const r=await api('/api/codex/add-scope',{
+      project_id:S.addScopeProject.id,
+      account:S.addScopePicked.account,
+      cid:S.addScopePicked.id,
+      name:S.addScopePicked.name,
+      range:rng,
+    });
+    const addedName=(r.added&&r.added.name)||S.addScopePicked.name;
+    closeAddScopeModal();
+    await codexStatus();
+    setMsg('已追加会话「'+addedName+'」（项目当前共 '+(r.messages||0)+' 条消息，目录路径未改动）');
+  }catch(e){
+    setMsg('追加会话失败：'+e.message,true);
+    if(btn){ btn.disabled=false; btn.textContent=orig; }
+  }finally{
+    if(btn && btn.textContent==='加入并同步中…'){ btn.textContent=orig; }
+  }
 }
 function showConflict(d){
   S.conflictProject=d.project||null;
@@ -1028,13 +1243,11 @@ function renderGroups(){
   $('#groupCount').textContent = list.length+' / '+S.groups.length+' 个会话';
   $('#groups').innerHTML = list.map(g=>{
     const sel = S.selected && S.selected.id===g.id && S.selected.account===g.account;
-    const w = S.watched.includes(g.id);
     const ex = S.exportGroups.has(groupKey(g));
     const members=(g.members||[]).join('、') || String(g.id||'');
     return `<div class="gcard ${sel?'sel':''}${ex?' expicked':''}" data-key="${esc(g.account+'|'+g.id)}" title="${esc(members)}">
       <div class="gchecks">
         <input type="checkbox" class="expbox" data-key="${esc(groupKey(g))}" ${ex?'checked':''} title="选入多会话合并导出">
-        <input type="checkbox" class="watchbox" data-id="${esc(g.id)}" ${w?'checked':''} title="加入每 5 分钟自动同步">
       </div>
       <div class="gbody">
         <div class="gline1"><span class="gname">${esc(g.name||'')}</span>
@@ -1046,7 +1259,7 @@ function renderGroups(){
     </div>`;
   }).join('') || '<div class="hint">没有匹配的会话</div>';
   $$('#groups .gcard[data-key]').forEach(card=>card.addEventListener('click', e=>{
-    if(e.target.classList.contains('watchbox') || e.target.classList.contains('expbox')) return;
+    if(e.target.classList.contains('expbox')) return;
     const parts = card.dataset.key.split('|');
     const g = S.groups.find(x => x.account===parts[0] && x.id===parts.slice(1).join('|'));
     if(g) selectGroup(g);
@@ -1060,9 +1273,6 @@ function renderGroups(){
       renderGroups(); updateExportSummary();
     });
   });
-  $$('#groups .watchbox').forEach(cb=>cb.addEventListener('change', e=>{
-    e.stopPropagation(); toggleWatch(cb.dataset.id, cb.checked);
-  }));
 }
 
 function setLiveState(text, cls){
@@ -1473,21 +1683,19 @@ async function doExport(){
 }
 
 async function doRescan(){
-  $('#btnRescan').disabled=true;
+  const b=$('#btnRescan');
+  if(b.disabled) return;
+  b.disabled=true;
   $('#taskLog').style.display='block'; $('#taskLog').textContent='正在扫描企业微信内存，请稍候…';
   try{
     const t=await api('/api/rescan', {});
-    await pollTask(t.task_id, async task=>{
-      if(task.status==='error'){ setMsg('重扫失败：'+(task.error||''), true); }
-      else{
-        const r=task.result||{};
-        setMsg('重扫完成'+(r.added&&r.added.length?('，新增 '+r.added.length+' 个账号'):''));
-        await loadAll();
-        if(S.selected) await loadMessages();
-      }
-      $('#btnRescan').disabled=false;
-    });
-  }catch(e){ setMsg(e.message,true); $('#btnRescan').disabled=false; }
+    const r=await waitTask(t.task_id, 180000);
+    const res=r.result||{};
+    setMsg('重扫完成'+(res.added&&res.added.length?('，新增 '+res.added.length+' 个账号'):''));
+    await loadAll();
+    if(S.selected) await loadMessages();
+  }catch(e){ setMsg(e.message,true); }
+  finally{ b.disabled=false; }   // 任何成功/失败/超时分支都恢复，绝不永久卡灰
 }
 
 async function syncToggle(){
@@ -1591,7 +1799,18 @@ function onSearchInput(){
 
 $('#search').addEventListener('input', onSearchInput);
 $('#btnRescan').addEventListener('click', doRescan);
-$('#btnReload').addEventListener('click', async ()=>{ setMsg('正在刷新…'); try{ await api('/api/refresh',{}); await loadAll(); if(S.selected) await loadMessages(); }catch(e){setMsg(e.message,true);} });
+$('#btnReload').addEventListener('click', async ()=>{
+  const b=$('#btnReload');
+  if(b.disabled) return;
+  b.disabled=true; setMsg('正在刷新…');
+  try{
+    const t=await api('/api/refresh',{});
+    await waitTask(t.task_id, 120000);
+    await loadAll(); if(S.selected) await loadMessages();
+    setMsg('列表已刷新');
+  }catch(e){ setMsg(e.message,true); }
+  finally{ b.disabled=false; }
+});
 $('#btnExport').addEventListener('click', doExport);
 $('#btnExportAll').addEventListener('click', ()=>{
   for(const g of filterGroups()) setExportGroup(g,true);
@@ -1601,7 +1820,17 @@ $('#btnExportNone').addEventListener('click', ()=>{
   S.exportGroups.clear(); renderGroups(); updateExportSummary();
 });
 $('#btnCodexStart').addEventListener('click', doCodexStart);
-$('#btnCodexReload').addEventListener('click', ()=>codexStatus().catch(e=>setMsg(e.message,true)));
+$('#btnCodexReload').addEventListener('click', async ()=>{
+  const b=$('#btnCodexReload');
+  if(b.disabled) return;
+  b.disabled=true; setMsg('正在检测并刷新在办清单…');
+  try{
+    await api('/api/codex/tick', {}, 30000).catch(()=>{});
+    await codexStatus();
+    setMsg('在办清单已刷新');
+  }catch(e){ setMsg(e.message,true); }
+  finally{ b.disabled=false; }
+});
 $$('[data-save-root]').forEach(b=>b.addEventListener('click', async ()=>{
   const t=b.dataset.saveRoot, input=$('#'+t+'Root');
   try{
@@ -1622,6 +1851,10 @@ $$('#targetFilter .cap').forEach(b=>
   b.addEventListener('click',()=>setLiveFilter(b.dataset.filter)));
 $('#codexSearch').addEventListener('input', e=>{
   S.codexSearch=e.target.value||'';
+  if(S.lastCodexStatus) renderCodexList(S.lastCodexStatus);
+});
+$('#codexSort').addEventListener('change', e=>{
+  S.codexSort=e.target.value||'new';
   if(S.lastCodexStatus) renderCodexList(S.lastCodexStatus);
 });
 setLiveTarget(S.liveTarget);
@@ -1651,8 +1884,26 @@ $('#btnTransferHere').addEventListener('click', async ()=>{
     await codexStatus();
   }catch(e){ setMsg(e.message||String(e),true); }
 });
-// 界面卡片每 5 秒静默刷新（真正的增量同步在后端独立线程里，同样 5 秒水印检查）
-setInterval(()=>{ codexStatus().catch(()=>{}); }, 5000);
+// 高频轮询防堆积锁：上一轮没结束绝不发下一轮，避免服务稍忙时浏览器堆叠几十个请求
+const inflight={codex:false,logs:false,changes:false};
+function guarded(key, fn){
+  if(inflight[key]) return;
+  inflight[key]=true;
+  Promise.resolve().then(fn).catch(()=>{}).finally(()=>{ inflight[key]=false; });
+}
+// 轻量异步任务等待：HTTP 入口只拿 task_id，耗时工作全在后台线程
+async function waitTask(id, ms=30000){
+  const t0=Date.now();
+  while(Date.now()-t0<ms){
+    const r=await api('/api/task?id='+encodeURIComponent(id));
+    if(r.status==='done') return r;
+    if(r.status==='error') throw new Error(r.error||'后台任务失败');
+    await new Promise(ok=>setTimeout(ok,600));
+  }
+  throw new Error('后台任务超时，已停止等待（任务仍在后台继续）');
+}
+// 界面卡片每 5 秒静默刷新（真正的增量同步在后端独立线程里）
+setInterval(()=>guarded('codex', ()=>codexStatus()), 5000);
 codexStatus().catch(()=>{});
 $('#btnOpen').addEventListener('click', openFullFolder);
 $('#btnDownload').addEventListener('click', downloadFullZip);
@@ -1695,11 +1946,11 @@ $('#msgList').addEventListener('click', e=>{
   syncChecks(); updateSelStat();
   setMsg('已从第 '+(idx+1)+' 条选到最后，共 '+S.selIds.size+' 条（前面旧单子已跳过）');
 });
-setInterval(async ()=>{
+setInterval(()=>guarded('logs', async ()=>{
   try{ const r=await api('/api/logs?n=80'); const el=$('#logs'); el.textContent=(r.lines||[]).join('\n')||'暂无日志'; el.scrollTop=el.scrollHeight; }catch(e){}
-}, 3000);
+}), 3000);
 // 右侧聊天记录实时自动同步：每 8 秒静默检查 message.db / WAL 新写入
-setInterval(pollChanges, 8000);
+setInterval(()=>guarded('changes', pollChanges), 8000);
 setTimeout(pollChanges, 2500);
 $('#btnExtraAdd').addEventListener('click', async ()=>{
   const v=$('#extraDirInput').value.trim();
@@ -1723,6 +1974,13 @@ $$('.tabs .tab').forEach(b=>b.addEventListener('click',()=>switchTab(b.dataset.t
 
 $('#btnAcctPop').addEventListener('click', e=>{
   e.stopPropagation(); $('#acctPop').classList.toggle('open');
+});
+if($('#btnAddScopeClose')) $('#btnAddScopeClose').addEventListener('click', closeAddScopeModal);
+if($('#btnAddScopeCancel')) $('#btnAddScopeCancel').addEventListener('click', closeAddScopeModal);
+if($('#btnAddScopeConfirm')) $('#btnAddScopeConfirm').addEventListener('click', confirmAddScope);
+if($('#addScopeSearch')) $('#addScopeSearch').addEventListener('input', renderAddScopeList);
+if($('#addScopeModal')) $('#addScopeModal').addEventListener('click', e=>{
+  if(e.target===$('#addScopeModal')) closeAddScopeModal();
 });
 $('#btnAcctPopClose').addEventListener('click', ()=>$('#acctPop').classList.remove('open'));
 document.addEventListener('click', e=>{

@@ -7,6 +7,7 @@
 """
 import json
 import os
+import queue
 import shutil
 import sys
 import threading
@@ -35,7 +36,11 @@ LOG_BUFFER = deque(maxlen=600)
 LOG_LOCK = threading.Lock()
 TASKS = {}
 TASKS_LOCK = threading.Lock()
+TASK_QUEUE = queue.Queue()   # 常驻 worker，HTTP 入口只入队，绝不现开线程
+_TASK_FAIL = {}
 SYNC_STOP = threading.Event()
+_STATUS_CACHE = {"at": 0.0, "data": None}
+_STATUS_LOCK = threading.Lock()
 SYNC_THREAD = None
 SYNC_ENABLED = False
 SYNC_LOCK = threading.Lock()
@@ -88,7 +93,9 @@ def start_task(fn, **kwargs):
 
     def runner():
         try:
-            result = fn(emit, **kwargs)
+            # 标记前台耗时任务：3 秒同步 / 5 分钟自动同步见到就主动让路
+            with T.front_busy():
+                result = fn(emit, **kwargs)
         except BaseException as exc:
             # SystemExit / KeyboardInterrupt 等 BaseException 也必须收敛。
             # 外部运行时可能把 shutil.rmtree 包装成带守卫的版本，守卫拒绝时
@@ -102,21 +109,37 @@ def start_task(fn, **kwargs):
                 task["result"] = result
                 task["status"] = "done"
 
-    def watchdog():
-        """万一将来还有未知阻塞，兜底把任务从 running 收敛掉。"""
-        deadline = time.monotonic() + TASK_TIMEOUT_SECONDS
-        while time.monotonic() < deadline:
-            time.sleep(2)
-            with TASKS_LOCK:
-                task = TASKS.get(task_id)
-                if task is None or task["status"] != "running":
-                    return
-        fail(f"任务超时（超过 {TASK_TIMEOUT_SECONDS} 秒仍未完成），已自动结束；"
-             "请查看服务日志定位卡点")
-
-    threading.Thread(target=runner, daemon=True).start()
-    threading.Thread(target=watchdog, daemon=True).start()
+    _TASK_FAIL[task_id] = fail
+    TASK_QUEUE.put(runner)   # 常驻线程池消费；HTTP 线程 0.1 秒内返回 task_id
     return task_id
+
+
+def task_worker():
+    while True:
+        runner = TASK_QUEUE.get()
+        try:
+            runner()
+        finally:
+            TASK_QUEUE.task_done()
+
+
+def task_watchdog():
+    """单一常驻巡检替代每任务一个 watchdog 线程，避免入口现开线程。"""
+    while True:
+        time.sleep(2)
+        now = time.time()
+        expired = []
+        with TASKS_LOCK:
+            for task_id, task in TASKS.items():
+                if (task.get("status") == "running"
+                        and now - float(task.get("started_at") or 0)
+                        > TASK_TIMEOUT_SECONDS):
+                    expired.append(task_id)
+        for task_id in expired:
+            fail = _TASK_FAIL.get(task_id)
+            if fail:
+                fail(f"任务超时（超过 {TASK_TIMEOUT_SECONDS} 秒仍未完成），"
+                     "已自动结束；请查看服务日志定位卡点")
 
 
 def task_export(emit, cid, account, name, ids, zip_mode="timestamp", lite_mode="auto",
@@ -186,6 +209,34 @@ def task_export(emit, cid, account, name, ids, zip_mode="timestamp", lite_mode="
     return result
 
 
+def task_refresh(emit):
+    """异步刷新会话列表：HTTP 入口 <0.1s 返回 task_id，不阻塞请求线程。"""
+    emit("正在刷新会话与媒体缓存…")
+    cfg = T.load_config()
+    T.invalidate_media_caches()
+    result = T.list_conversations(cfg, force=True)
+    log(f"[ui] 会话与媒体缓存已刷新：{result['count']} 个会话")
+    return {"count": result["count"]}
+
+
+def status_refresher():
+    """后台刷新顶部状态快照；HTTP 只读内存，绝不因 tasklist/目录枚举卡住。"""
+    while True:
+        try:
+            data = T.account_status(T.load_config())
+            with _STATUS_LOCK:
+                _STATUS_CACHE.update({"at": time.time(), "data": data})
+        except Exception as exc:
+            log(f"[status] 快照刷新异常：{exc}")
+        time.sleep(2)
+
+
+def task_codex_refresh(emit, project_id):
+    """异步刷新单个在办项目，避免 HTTP 线程里重导大目录。"""
+    emit("正在刷新该在办项目…")
+    return {"project": T.codex_refresh(project_id)}
+
+
 def task_rescan(emit):
     emit("正在扫描 WXWork.exe 进程内存（约 1–2 分钟，有时间上限），请确保企业微信已登录并运行…")
     result = T.rescan()
@@ -204,22 +255,29 @@ def task_rescan(emit):
 # ---------------------------------------------------------------- 内置 5 分钟同步
 
 def sync_worker():
-    log("[sync] 自动同步已开启（间隔 300 秒）")
+    log("[sync] 自动同步已开启（间隔 300 秒，后台非阻塞让路）")
     while not SYNC_STOP.is_set():
         try:
-            cfg = T.load_config()
-            result = T.sync(cfg)
-            if result.get("skipped"):
-                log(f"[sync] 检查完成：无变化（{result.get('reason', '')}）")
+            if T.front_is_busy():
+                log("[sync] 前台操作进行中，后台本轮让路")
             else:
-                log(f"[sync] 刷新完成 @ {result.get('time')}，变化账号 {', '.join(result.get('changed', [])) or '无'}")
-                for item in result.get("results", []):
-                    if item.get("messages"):
-                        log(f"[sync]   {item.get('name')} → {item['messages']} 条 / "
-                            f"{item.get('attachments_ok', 0)} 附件 / ZIP {item.get('zip_name', '')} / "
-                            f"missing {len(item.get('missing') or [])}")
-                for error in result.get("errors", []):
-                    log(f"[sync]   ERR {error}")
+                cfg = T.load_config()
+                result = T.sync(cfg, background=True)
+                if result.get("skipped"):
+                    log(f"[sync] 检查完成：无变化（{result.get('reason', '')}）")
+                else:
+                    log(f"[sync] 刷新完成 @ {result.get('time')}，变化账号 "
+                        f"{', '.join(result.get('changed', [])) or '无'}")
+                    for item in result.get("results", []):
+                        if item.get("messages"):
+                            log(f"[sync]   {item.get('name')} → {item['messages']} 条 / "
+                                f"{item.get('attachments_ok', 0)} 附件 / ZIP "
+                                f"{item.get('zip_name', '')} / missing "
+                                f"{len(item.get('missing') or [])}")
+                    for error in result.get("errors", []):
+                        log(f"[sync]   ERR {error}")
+        except T.BusySkip as exc:
+            log(f"[sync] {exc}")
         except Exception as exc:
             log(f"[sync] 异常：{exc}")
         SYNC_STOP.wait(300)
@@ -313,8 +371,13 @@ class Handler(BaseHTTPRequestHandler):
                     return self._send(200, UI_FILE.read_text(encoding="utf-8"),
                                       "text/html; charset=utf-8")
                 if path == "/api/health":
-                    return self._json({"ok": True, "port": PORT,
-                                       "time": time.strftime("%Y-%m-%d %H:%M:%S")})
+                    return self._json({
+                        "ok": True, "port": PORT,
+                        "time": time.strftime("%Y-%m-%d %H:%M:%S"),
+                        "heartbeat_age": round(
+                            time.time() - T._CODEX_LAST_TICK["at"], 2),
+                        "tick_runs": T._CODEX_LAST_TICK["runs"],
+                        "front_busy": T.front_is_busy()})
                 if path == "/api/sandbox-status":
                     return self._json({
                         "sandbox": T.sandbox_status(),
@@ -329,9 +392,17 @@ class Handler(BaseHTTPRequestHandler):
                 if path == "/api/codex/status":
                     return self._json(T.codex_status())
                 if path == "/api/status":
-                    return self._json(T.account_status(T.load_config()))
+                    # 100% 只读后台已算好的内存快照：HTTP 线程零 stat / 零子进程
+                    with _STATUS_LOCK:
+                        data = _STATUS_CACHE["data"]
+                    return self._json(data or {"accounts": [],
+                                               "locked_accounts": [],
+                                               "wecom_running": False,
+                                               "total_accounts": 0})
                 if path == "/api/conversations":
-                    return self._json(T.list_conversations(T.load_config()))
+                    # 只读会话缓存快照，高频轮询 100% 无锁、毫秒返回
+                    return self._json(T.list_conversations_cached(
+                        T.load_config()))
                 if path == "/api/preview":
                     cid = query.get("cid", [""])[0]
                     account = query.get("account", [""])[0]
@@ -341,6 +412,7 @@ class Handler(BaseHTTPRequestHandler):
                         raise RuntimeError(f"账号 {account} 不在配置中")
                     return self._json(T.preview_messages(cfg, acc, cid, 20))
                 if path == "/api/messages":
+                    _m0 = time.perf_counter()
                     cid = query.get("cid", [""])[0]
                     account = query.get("account", [""])[0]
                     range_key = query.get("range", ["all"])[0]
@@ -350,7 +422,11 @@ class Handler(BaseHTTPRequestHandler):
                     acc = next((a for a in cfg["accounts"] if a["id"] == account), None)
                     if acc is None:
                         raise RuntimeError(f"账号 {account} 不在配置中")
-                    return self._json(T.messages_window(cfg, acc, cid, range_key, start, end))
+                    result = T.messages_window(
+                        cfg, acc, cid, range_key, start, end, allow_stale=True)
+                    if time.perf_counter() - _m0 > 1:
+                        log(f"[msg-http] 慢请求 {cid} {time.perf_counter()-_m0:.2f}s")
+                    return self._json(result)
                 if path == "/api/changes":
                     # 前端 8 秒静默轮询：水印检查 + WAL 增量补丁，不做全量解析
                     cid = query.get("cid", [""])[0]
@@ -438,7 +514,8 @@ class Handler(BaseHTTPRequestHandler):
                 if path == "/api/codex/start":
                     return self._json(T.codex_start(body))
                 if path == "/api/codex/refresh":
-                    return self._json({"project": T.codex_refresh(body.get("id") or "")})
+                    return self._json({"task_id": start_task(
+                        task_codex_refresh, project_id=body.get("id") or "")})
                 if path == "/api/codex/quick-sync":
                     return self._json(T.codex_quick_sync(body.get("id") or ""))
                 if path == "/api/codex/rename-note":
@@ -453,6 +530,16 @@ class Handler(BaseHTTPRequestHandler):
                     return self._json(T.codex_toggle_lock(
                         body.get("id") or "", body.get("cid"),
                         body.get("locked")))
+                if path == "/api/codex/add-scope":
+                    return self._json(T.codex_add_scope(
+                        body.get("project_id") or body.get("id") or "",
+                        body.get("account") or "",
+                        body.get("cid") or "",
+                        name=body.get("name") or "",
+                        range_key=body.get("range") or "7d",
+                        start=body.get("start"),
+                        end=body.get("end"),
+                    ))
                 if path == "/api/codex/transfer":
                     return self._json(T.codex_transfer(
                         body.get("id") or "", body.get("target") or "codex"))
@@ -502,10 +589,8 @@ class Handler(BaseHTTPRequestHandler):
                 if path == "/api/rescan":
                     return self._json({"task_id": start_task(task_rescan)})
                 if path == "/api/refresh":
-                    cfg = T.load_config()
-                    result = T.list_conversations(cfg, force=True)
-                    log(f"[ui] 会话缓存已刷新：{result['count']} 个会话")
-                    return self._json({"count": result["count"]})
+                    # 全部耗时任务异步化：HTTP <0.1s 返回 task_id
+                    return self._json({"task_id": start_task(task_refresh)})
                 if path == "/api/watch":
                     return self._json(T.watch_set(body.get("ids") or []))
                 if path == "/api/sync-control":
@@ -535,16 +620,32 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def codex_worker():
-    """按配置间隔静默检查水印；只做文件 stat 比对，纯 Python 线程不启子进程（0 黑框）。"""
+    """3 秒心跳：后台非阻塞让路 + 独立 watchdog 自检，异常绝不静默假死。"""
     log(f"[codex] 实时在办目录监控已启动（{T.CODEX_INTERVAL_SECONDS}s 水印检查）")
+
+    def watchdog():
+        while True:
+            time.sleep(15)
+            gap = time.time() - T._CODEX_LAST_TICK["at"]
+            if gap > 30:
+                log(f"[codex][watchdog] 心跳停滞 {gap:.0f}s，清冷却并记录告警")
+                T._CODEX_PENDING_COOLDOWN.clear()
+                T._CODEX_LAST_TICK["at"] = time.time()
+
+    threading.Thread(target=watchdog, daemon=True).start()
     while True:
         try:
-            outcome = T.codex_tick()
+            outcome = T.codex_tick(background=True)
             if outcome.get("refreshed"):
                 log(f"[codex] 增量刷新 {len(outcome['refreshed'])} 个项目"
                     f"，精准跳过 {len(outcome.get('skipped') or [])} 个")
+            elif outcome.get("skipped_reason"):
+                log(f"[codex] {outcome['skipped_reason']}")
+        except T.BusySkip as exc:
+            log(f"[codex] {exc}")
         except Exception as exc:
-            log(f"[codex] tick 异常: {exc}")
+            log(f"[codex] tick 异常：{type(exc).__name__}: {exc}")
+            T._CODEX_PENDING_COOLDOWN.clear()
         time.sleep(T.CODEX_INTERVAL_SECONDS)
 
 
@@ -558,7 +659,8 @@ def main():
             with urllib.request.urlopen(url + "/api/health", timeout=2) as response:
                 if response.status == 200:
                     print("An instance is already running; opening the existing page.", flush=True)
-                    webbrowser.open_new(url)
+                    if os.environ.get("WECOM_NO_BROWSER") != "1":
+                        webbrowser.open_new(url)
                     return
         except Exception:
             pass
@@ -571,6 +673,50 @@ def main():
     log(f"[sandbox] sitecustomize_loaded={_sb['shim_loaded']} "
         f"restored_delete_primitives={_sb['restored']} "
         f"ignore_environment={bool(sys.flags.ignore_environment)}")
+    # 启动时补一次派生库索引：30 万行消息表没有会话索引会全表扫 1~80 秒
+    try:
+        _cfg_boot = T.load_config()
+        for _acc in _cfg_boot.get("accounts") or []:
+            T._ensure_message_index(_acc, _cfg_boot)
+    except Exception as exc:
+        log(f"[db] 消息表索引预热失败（不影响启动）：{exc}")
+    # 启动时同步预热 7 个正式项目会话的消息快照（约 12 秒），
+    # 服务开始监听后首次打开/复测就是完整数据，不再出现 pending 空窗。
+    try:
+        _warm_t0 = time.perf_counter()
+        _seen = set()
+        for _project in _cfg_boot.get("codex_projects") or []:
+            if _project.get("status") != "running":
+                continue
+            for _entry in T._codex_scope_entries(_project.get("scope")):
+                _aid, _cid = str(_entry.get("account") or ""), str(_entry.get("cid") or "")
+                if (_aid, _cid) in _seen or not _cid:
+                    continue
+                _seen.add((_aid, _cid))
+                _acc = T._find_acc(_cfg_boot, _aid)
+                if _acc:
+                    T._message_index(_cfg_boot, _acc, _cid, allow_stale=False)
+        log(f"[msg-index] 启动预热 {len(_seen)} 个会话完成"
+            f"（{time.perf_counter() - _warm_t0:.1f}s）")
+    except Exception as exc:
+        log(f"[msg-index] 启动预热跳过：{exc}")
+    # 启动时补齐/核对各在办项目的 000_状态看板.md 与两个根目录的 000_全部单子总览.md（内容不变不写盘）
+    try:
+        _dash_res = T.refresh_codex_dashboards(T.load_config())
+        log(f"[dashboard] 启动核对完成：看板更新 {len(_dash_res.get('boards_updated') or [])} 个 / "
+            f"总览更新 {len(_dash_res.get('overviews_updated') or [])} 个")
+    except Exception as exc:
+        log(f"[dashboard] 启动核对跳过：{exc}")
+    # 顶部状态预热 + 后台 2 秒刷新：/api/status 永远是毫秒级内存命中
+    try:
+        _STATUS_CACHE.update({"at": time.time(),
+                              "data": T.account_status(T.load_config())})
+    except Exception as exc:
+        log(f"[status] 首次快照失败：{exc}")
+    for _ in range(4):
+        threading.Thread(target=task_worker, daemon=True).start()
+    threading.Thread(target=task_watchdog, daemon=True).start()
+    threading.Thread(target=status_refresher, daemon=True).start()
     threading.Thread(target=codex_worker, daemon=True).start()
     print(f"WeCom AI Export Tool running at {url}", flush=True)
     print("Keep this window open. Close it or press Ctrl+C to stop the service.", flush=True)
